@@ -1,0 +1,29 @@
+# MagnetaX .gitignore
+
+# Default build dirs
+build/
+Build/
+out/
+cmake-build-*/
+
+# Binaries
+MagnetaX/Binaries/**
+
+# Build dirs and files
+MagnetaX/Build/**
+
+!MagnetaX/Build
+!MagnetaX/Build/CMake/
+!MagnetaX/Build/Python/
+!MagnetaX/Build/CMake/CMakeLists.txt
+!MagnetaX/Build/**/*.cmake
+!MagnetaX/Build/**/CMakeLists.txt
+!MagnetaX/Build/**/*.py
+
+# Visual Studio and Code
+.vs/
+.vscode/
+
+# OS
+Thumbs.db
+.DS_Store
