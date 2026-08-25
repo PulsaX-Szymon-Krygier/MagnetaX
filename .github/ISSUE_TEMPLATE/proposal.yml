@@ -1,0 +1,32 @@
+name: Proposal
+description: Discuss a bigger idea or change before implementation
+labels:
+  - proposal
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What do you want to change?
+      description: Describe the idea or direction you want to discuss.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reason
+    attributes:
+      label: Why?
+      description: Explain what problem this solves or why the change would be useful.
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: What could this affect?
+      description: Mention APIs, architecture, subsystems, dependencies, file formats, or other areas if relevant.
+
+  - type: textarea
+    id: approach
+    attributes:
+      label: Possible approach
+      description: If you already have an implementation idea, describe it here.

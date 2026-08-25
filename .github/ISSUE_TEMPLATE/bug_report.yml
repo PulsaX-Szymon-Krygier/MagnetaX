@@ -1,0 +1,32 @@
+name: Bug report
+description: Report something that is not working correctly
+labels:
+  - bug
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: How to reproduce
+      description: Add the steps needed to reproduce the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Platform, compiler, GPU, driver, or anything else that may be relevant.
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional information
+      description: Logs, validation errors, screenshots, videos, or anything else that may help.
