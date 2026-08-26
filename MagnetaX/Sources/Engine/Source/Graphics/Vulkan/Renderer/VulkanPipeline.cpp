@@ -117,7 +117,9 @@ bool VulkanPipeline::Create(VkDevice _device, const VulkanPipelineCreateInfo& cr
     VkPipelineRasterizationStateCreateInfo rasterInfo{};
     rasterInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     rasterInfo.polygonMode = VK_POLYGON_MODE_FILL;
-    rasterInfo.cullMode = VK_CULL_MODE_NONE;
+    //rasterInfo.cullMode = VK_CULL_MODE_NONE;
+    rasterInfo.cullMode = createInfo.cullMode;
+    rasterInfo.frontFace = createInfo.frontFace;
     rasterInfo.lineWidth = 1.0f;
     rasterInfo.depthBiasEnable = createInfo.depthBias;
 

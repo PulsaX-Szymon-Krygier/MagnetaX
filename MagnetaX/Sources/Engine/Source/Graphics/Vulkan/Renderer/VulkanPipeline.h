@@ -34,6 +34,9 @@ struct VulkanPipelineCreateInfo
 
     bool depthBias = false;
     bool alphaBlending = false;
+
+    VkCullModeFlags cullMode = VK_CULL_MODE_NONE;
+    VkFrontFace frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 };
 
 class VulkanPipeline

@@ -104,6 +104,8 @@ bool VulkanShadowDepthPass::Create(const VulkanShadowDepthPassCreateInfo& create
     pipelineInfo.depthBias = true;
     pipelineInfo.pushConstantRanges = &pushConstRange;
     pipelineInfo.pushConstantRangeCount = 1;
+    pipelineInfo.cullMode = VK_CULL_MODE_BACK_BIT;
+    pipelineInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
 
     if (!pipeline.Create(device, pipelineInfo))
     {

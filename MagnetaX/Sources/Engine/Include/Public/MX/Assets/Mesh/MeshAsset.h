@@ -10,7 +10,7 @@
 class MeshAsset : public AbstractAsset
 {
 public:
-    explicit MeshAsset(AssetSource _source);
+    explicit MeshAsset(AssetSource _source, bool _flipWinding = false);
 
     const std::vector<MeshVertex>& GetVertices() const { return vertices; }
     const std::vector<uint32>& GetIndices() const { return indices; }
@@ -20,6 +20,8 @@ private:
 
     std::vector<MeshVertex> vertices;
     std::vector<uint32> indices;
+
+    bool flipWinding = false;
 
     bool Load() override;
     void Unload() override;

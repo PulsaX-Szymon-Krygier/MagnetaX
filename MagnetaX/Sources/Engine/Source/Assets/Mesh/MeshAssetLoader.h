@@ -8,5 +8,6 @@
 
 struct MeshAssetLoader
 {
-    static bool LoadFromFile(const AssetSource& source, std::vector<MeshVertex>& vertices, std::vector<uint32>& indices);
+    static bool LoadFromFile(const AssetSource& source, std::vector<MeshVertex>& vertices,
+        std::vector<uint32>& indices, bool flipWinding = false);
 };

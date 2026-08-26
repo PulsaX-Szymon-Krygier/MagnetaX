@@ -4,11 +4,11 @@
 #include "MeshAssetLoader.h"
 #include <utility>
 
-MeshAsset::MeshAsset(AssetSource _source) : source(std::move(_source)) {}
+MeshAsset::MeshAsset(AssetSource _source, bool _flipWinding) : source(std::move(_source)), flipWinding(_flipWinding) {}
 
 bool MeshAsset::Load()
 {
-    return MeshAssetLoader::LoadFromFile(source, vertices, indices);
+    return MeshAssetLoader::LoadFromFile(source, vertices, indices, flipWinding);
 }
 
 void MeshAsset::Unload()

@@ -103,6 +103,8 @@ bool VulkanGBufferPass::Create(const VulkanGBufferPassCreateInfo& createInfo)
     pipelineInfo.depthTest = true;
     pipelineInfo.depthWrite = true;
     pipelineInfo.depthCompareOp = VK_COMPARE_OP_LESS;
+    pipelineInfo.cullMode = VK_CULL_MODE_BACK_BIT;
+    pipelineInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
     if (!pipeline.Create(buffDevice, pipelineInfo))
     {

@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <unordered_map>
 #include <functional>
+#include <utility>
 
 namespace
 {
@@ -29,7 +30,8 @@ namespace
         }
     };
 
-    bool LoadFromOBJ(const AssetSource& source, std::vector<MeshVertex>& vertices, std::vector<uint32>& indices)
+    bool LoadFromOBJ(const AssetSource& source, std::vector<MeshVertex>& vertices,
+        std::vector<uint32>& indices, bool flipWinding = false)
     {
         tinyobj::ObjReader reader;
         tinyobj::ObjReaderConfig config;
@@ -106,6 +108,15 @@ namespace
             }
         }
 
+        // Flip winding if required
+        if (flipWinding)
+        {
+            for (usize i = 0; i + 2 < indices.size(); i += 3)
+            {
+                std::swap(indices[i + 1], indices[i + 2]);
+            }
+        }
+
         // Generate normals if .obj does not have them
         // But verify this method later
         if (attributes.normals.empty())
@@ -132,12 +143,13 @@ namespace
     }
 }
 
-bool MeshAssetLoader::LoadFromFile(const AssetSource& source, std::vector<MeshVertex>& vertices, std::vector<uint32>& indices)
+bool MeshAssetLoader::LoadFromFile(const AssetSource& source, std::vector<MeshVertex>& vertices,
+    std::vector<uint32>& indices, bool flipWinding)
 {
     const std::filesystem::path path(source.GetPath());
     const std::string extension = path.extension().string();
 
-    if (extension == ".obj") return LoadFromOBJ(source, vertices, indices);
+    if (extension == ".obj") return LoadFromOBJ(source, vertices, indices, flipWinding);
 
     return false;
 }
