@@ -30,7 +30,7 @@ void TestGame::OnInit()
     SceneEnvironment& env = scene1.GetEnvironment();
     env.backgroundColor = Vector3f(0.1f, 0.4f, 0.6f);
     env.ambientLightColor = Vector3f(1.0f, 1.0f, 1.0f);
-    env.ambientLightIntensity = 0.03f;
+    env.ambientLightIntensity = 0.01f;
 
     Entity testEntity = scene1.CreateEntity();
     testEntity.AddComponent<CameraComponent>();
@@ -45,7 +45,7 @@ void TestGame::OnInit()
     AssetHandle<TextureAsset> txtGrey = GetAssetManager().CreateAsset<TextureAsset>(AssetSource((assetsPath / "Textures/grey.png").string()));
 
     AssetHandle<MeshAsset> meshCube = GetAssetManager().CreateAsset<MeshAsset>(AssetSource((assetsPath / "Models/cube.obj").string()));
-    AssetHandle<MeshAsset> meshSphere = GetAssetManager().CreateAsset<MeshAsset>(AssetSource((assetsPath / "Models/sphere.obj").string()));
+    AssetHandle<MeshAsset> meshSphere = GetAssetManager().CreateAsset<MeshAsset>(AssetSource((assetsPath / "Models/sphere.obj").string()), true);
 
     auto createMaterial = 
         [&](const Vector4f& color, float32 roughness, float32 metallic, AssetHandle<TextureAsset> texture = {}, float32 scale = 1.0f)
@@ -110,6 +110,9 @@ void TestGame::OnInit()
 
     createLight(LightType::POINT, Vector3f(-4.0f, 4.0f, 1.0f), Vector3f(1.0f, 0.3f, 0.1f), 30.0f, 10.0f);
     createLight(LightType::POINT, Vector3f(4.0f, 4.0f, 1.0f), Vector3f(0.8f, 0.9f, 1.0f), 25.0f, 10.0f);
+
+    Entity sun = createLight(LightType::DIRECTIONAL, Vector3f(0.0f), Vector3f(1.0f, 1.0f, 1.0f), 10.0f, 0.0f);
+    sun.GetComponent<TransformComponent>()->rotation = Quaternion::FromYawPitchRollDegrees(-30.0f, -30.0f, 0.0f);
 
     Entity spot = createLight(LightType::SPOT, Vector3f(0.0f, 5.0f, -2.0f), Vector3f(1.0f, 0.9f, 0.8f), 35.0f, 12.0f);
     spot.GetComponent<TransformComponent>()->rotation = Quaternion::FromYawPitchRollDegrees(0.0f, -90.0f, 0.0f);
