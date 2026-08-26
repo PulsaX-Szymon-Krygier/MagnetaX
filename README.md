@@ -1,16 +1,18 @@
 # MagnetaX
 
+**IMPORTANT:** MagnetaX is still in a very early stage of development. Expect frequent changes, unfinished systems, temporary limitations, and APIs that may change as the project evolves.
+
 MagnetaX is an open-source 3D game engine written in C++20.
 
 The project focuses on modern, straightforward solutions and keeping the engine understandable for people who actually want to work with the code, modify it, and build things on top of it.
 
-Vulkan is currently the primary graphics API, with support for other graphics APIs possibly coming in the future.
+Vulkan is the primary graphics API, with support for other graphics APIs possibly coming in the future.
 
-MagnetaX currently targets desktop platforms, with consoles maybe joining the list someday too.
+The engine currently targets desktop platforms, with consoles maybe joining the list someday too.
 
 ## Development status
 
-MagnetaX is currently in an active development stage.
+MagnetaX is under active development.
 
 The engine is not stable yet. Expect breaking changes, refactors, unfinished systems, temporary limitations, and APIs that may change as the project takes shape.
 
@@ -29,7 +31,8 @@ The project aims to keep solutions modern but practical, with clear architecture
 If you want to contribute, read:
 
 - [Contributing to MagnetaX](CONTRIBUTING.md)
-- [MagnetaX Coding Style](CODING_STYLE.md)
+- [Coding Style](CODING_STYLE.md)
+- [Engine Conventions](ENGINE_CONVENTIONS.md)
 - [AI Usage Policy](AI_POLICY.md)
 
 ## License
