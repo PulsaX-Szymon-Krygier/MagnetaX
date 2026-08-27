@@ -296,7 +296,7 @@ const GraphicsDeviceInfo& VulkanGraphicsSystem::GetDeviceInfo() const
     return device.GetInfo();
 }
 
-VulkanTexture* VulkanGraphicsSystem::GetOrCreateTexture(uint64 assetID, TextureAsset* textureAsset, ImageFormat format)
+VulkanTexture* VulkanGraphicsSystem::GetOrCreateTexture(uint64 assetID, TextureAsset* textureAsset)
 {
     if (!textureAsset) return nullptr;
 
@@ -309,7 +309,7 @@ VulkanTexture* VulkanGraphicsSystem::GetOrCreateTexture(uint64 assetID, TextureA
 
     std::unique_ptr<VulkanTexture> texture = std::make_unique<VulkanTexture>();
 
-    if (!texture->Create(&device, pixels.data(), textureAsset->GetWidth(), textureAsset->GetHeight(), format, config.texture))
+    if (!texture->Create(&device, pixels.data(), textureAsset->GetWidth(), textureAsset->GetHeight(), textureAsset->GetFormat(), config.texture))
     {
         return nullptr;
     }
@@ -345,7 +345,7 @@ VulkanMaterial* VulkanGraphicsSystem::GetOrCreateMaterial(uint64 assetID, Materi
         {
             TextureAsset* textureAsset = assetManager->GetAsset(materialAsset->baseColorTexture);
 
-            VulkanTexture* texture = GetOrCreateTexture(materialAsset->baseColorTexture.GetID(), textureAsset, ImageFormat::RGBA8_SRGB);
+            VulkanTexture* texture = GetOrCreateTexture(materialAsset->baseColorTexture.GetID(), textureAsset);
 
             if (texture) baseColorTexture = texture;
         }

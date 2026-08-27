@@ -4,11 +4,11 @@
 #include "TextureAssetLoader.h"
 #include <utility>
 
-TextureAsset::TextureAsset(AssetSource _source) : source(std::move(_source)) {}
+TextureAsset::TextureAsset(AssetSource _source, ImageFormat _format) : source(std::move(_source)), format(_format) {}
 
 bool TextureAsset::Load()
 {
-    return TextureAssetLoader::LoadFromFile(source, width, height, pixels);
+    return TextureAssetLoader::LoadFromFile(source, format, width, height, pixels);
 }
 
 void TextureAsset::Unload()

@@ -56,7 +56,7 @@ private:
 
     GraphicsDebugView debugView = GraphicsDebugView::FINAL;
 
-    VulkanTexture* GetOrCreateTexture(uint64 assetID, TextureAsset* textureAsset, ImageFormat format);
+    VulkanTexture* GetOrCreateTexture(uint64 assetID, TextureAsset* textureAsset);
     VulkanMaterial* GetOrCreateMaterial(uint64 assetID, MaterialAsset* materialAsset, AssetManager* assetManager);
     VulkanMesh* GetOrCreateMesh(uint64 assetID, MeshAsset* meshAsset);
 };
