@@ -95,7 +95,8 @@ namespace
 
                     if (texcoordOffset + 1 < attributes.texcoords.size())
                     {
-                        vertex.uv = Vector2f(attributes.texcoords[texcoordOffset], attributes.texcoords[texcoordOffset + 1]);
+                        //vertex.uv = Vector2f(attributes.texcoords[texcoordOffset], attributes.texcoords[texcoordOffset + 1]);
+                        vertex.uv = Vector2f(attributes.texcoords[texcoordOffset], 1.0f - attributes.texcoords[texcoordOffset + 1]);
                     }
                 }
 
