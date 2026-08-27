@@ -59,4 +59,9 @@ private:
     VulkanTexture* GetOrCreateTexture(uint64 assetID, TextureAsset* textureAsset);
     VulkanMaterial* GetOrCreateMaterial(uint64 assetID, MaterialAsset* materialAsset, AssetManager* assetManager);
     VulkanMesh* GetOrCreateMesh(uint64 assetID, MeshAsset* meshAsset);
+
+    // Temporary place for those members, later I will move them to proper place
+    // Maybe VulkanEnvironment class or context??
+    uint64 environmentMapAssetID = 0;
+    std::unique_ptr<VulkanTexture> environmentTexture;
 };

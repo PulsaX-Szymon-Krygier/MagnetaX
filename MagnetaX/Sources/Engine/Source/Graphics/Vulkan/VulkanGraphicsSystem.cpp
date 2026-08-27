@@ -160,6 +160,12 @@ void VulkanGraphicsSystem::Destroy()
     if (fallbackTexture) fallbackTexture->Destroy();
     fallbackTexture.reset();
 
+    // Temporary place!!!
+    if (environmentTexture) environmentTexture->Destroy();
+    environmentTexture.reset();
+    environmentMapAssetID = 0;
+    // -----
+
     for (auto& mesh : meshes)
     {
         if (mesh.second) mesh.second->Destroy();
@@ -223,6 +229,59 @@ void VulkanGraphicsSystem::RenderScene(Scene* scene, AssetManager* assetManager,
 
     const Size2i renderSize(extent.width, extent.height);
     const RenderSceneData sceneData = BuildRenderSceneData(scene, renderSize);
+
+    const uint64 envAssetID = sceneData.environmentMap.GetID();
+
+    if (envAssetID != environmentMapAssetID)
+    {
+        if (environmentTexture) environmentTexture->Destroy();
+        environmentTexture.reset();
+
+        if (sceneData.environmentMap && assetManager)
+        {
+            AssetState envState = assetManager->GetAssetState(sceneData.environmentMap);
+
+            if (envState == AssetState::UNLOADED)
+            {
+                if (assetManager->LoadAsset(sceneData.environmentMap))
+                {
+                    envState = assetManager->GetAssetState(sceneData.environmentMap);
+                }
+            }
+
+            if (envState == AssetState::LOADED)
+            {
+                TextureAsset* envTexture = assetManager->GetAsset(sceneData.environmentMap);
+
+                if (envTexture && envTexture->GetFormat() == ImageFormat::RGBA32_FLOAT)
+                {
+                    VulkanTextureCreateInfo textureInfo{};
+                    textureInfo.pixels = envTexture->GetPixels().data();
+                    textureInfo.width = envTexture->GetWidth();
+                    textureInfo.height = envTexture->GetHeight();
+                    textureInfo.config.mipmaps = false;
+                    textureInfo.config.anisotropy = 1.0f;
+                    textureInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+                    textureInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+                    textureInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+                    textureInfo.device = &device;
+                    //textureInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT;
+                    textureInfo.format = envTexture->GetFormat();
+
+                    environmentTexture = std::make_unique<VulkanTexture>();
+
+                    if (!environmentTexture->Create(textureInfo))
+                    {
+                        environmentTexture.reset();
+                    }
+                }
+            }
+        }
+
+        // Rn it's ok for testing but it sets ID no matter if asset exists
+        // Add proper logic in the future
+        environmentMapAssetID = envAssetID;
+    }
 
     std::vector<VulkanDrawItem> drawItems;
     drawItems.reserve(sceneData.objects.size());
