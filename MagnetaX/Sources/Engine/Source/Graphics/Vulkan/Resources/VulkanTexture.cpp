@@ -48,7 +48,14 @@ bool VulkanTexture::Create(const VulkanTextureCreateInfo& createInfo)
 
     const VkImageUsageFlags imageUsage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 
-    if (!image.Create(createInfo.device, extent, createInfo.format, imageUsage, mipLevels))
+    VulkanImageCreateInfo imageInfo{};
+    imageInfo.device = createInfo.device;
+    imageInfo.extent = extent;
+    imageInfo.format = createInfo.format;
+    imageInfo.usage = imageUsage;
+    imageInfo.mipLevels = mipLevels;
+
+    if (!image.Create(imageInfo))
     {
         stagingBuffer.Destroy();
         Destroy();

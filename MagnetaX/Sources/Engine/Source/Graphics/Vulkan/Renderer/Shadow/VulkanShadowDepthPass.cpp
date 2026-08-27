@@ -26,7 +26,15 @@ bool VulkanShadowDepthPass::Create(const VulkanShadowDepthPassCreateInfo& create
 
     const VkImageUsageFlags imageUsage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 
-    if (!shadowMap.Create(createInfo.device, extent, ImageFormat::D32_FLOAT, imageUsage, 1, layerCount))
+    VulkanImageCreateInfo imageInfo{};
+    imageInfo.device = createInfo.device;
+    imageInfo.extent = extent;
+    imageInfo.format = ImageFormat::D32_FLOAT;
+    imageInfo.usage = imageUsage;
+    imageInfo.arrayLayers = layerCount;
+    imageInfo.viewType = layerCount > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
+
+    if (!shadowMap.Create(imageInfo))
     {
         Destroy();
         return false;

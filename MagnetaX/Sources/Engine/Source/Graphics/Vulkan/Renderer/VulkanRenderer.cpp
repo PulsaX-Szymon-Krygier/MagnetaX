@@ -115,7 +115,13 @@ bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
 
     const VkImageUsageFlags sceneColorUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 
-    if (!sceneColor.Create(device, extent, ImageFormat::RGBA16_FLOAT, sceneColorUsage))
+    VulkanImageCreateInfo sceneColorImgInfo{};
+    sceneColorImgInfo.device = device;
+    sceneColorImgInfo.extent = extent;
+    sceneColorImgInfo.format = ImageFormat::RGBA16_FLOAT;
+    sceneColorImgInfo.usage = sceneColorUsage;
+
+    if (!sceneColor.Create(sceneColorImgInfo))
     {
         Destroy();
         return false;

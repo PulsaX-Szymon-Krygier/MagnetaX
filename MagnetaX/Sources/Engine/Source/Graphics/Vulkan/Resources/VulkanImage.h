@@ -5,6 +5,21 @@
 #include <Graphics/Vulkan/VulkanCommon.h>
 #include "VulkanImageFormat.h"
 
+struct VulkanImageCreateInfo
+{
+    VulkanDevice* device = nullptr;
+
+    VkExtent2D extent{};
+    ImageFormat format = ImageFormat::UNKNOWN;
+    VkImageUsageFlags usage = 0;
+
+    uint32 mipLevels = 1;
+    uint32 arrayLayers = 1;
+
+    VkImageCreateFlags flags = 0;
+    VkImageViewType viewType = VK_IMAGE_VIEW_TYPE_2D;
+};
+
 class VulkanImage
 {
 public:
@@ -15,9 +30,8 @@ public:
     VulkanImage(VulkanImage&& other) noexcept;
     VulkanImage& operator=(VulkanImage&& other) noexcept;
 
+    bool Create(const VulkanImageCreateInfo& createInfo);
     bool Create(VkDevice _device, VkImage _image, VkFormat _format, VkImageAspectFlags aspect);
-    bool Create(VulkanDevice* _device, VkExtent2D extent, ImageFormat _format, VkImageUsageFlags usage,
-        uint32 mipLevels = 1, uint32 arrayLayers = 1);
 
     void Destroy();
 

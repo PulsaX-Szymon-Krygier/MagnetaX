@@ -14,25 +14,35 @@ bool VulkanGBuffer::Create(VulkanDevice* _device, VkExtent2D _extent)
     const VkImageUsageFlags colorUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     const VkImageUsageFlags depthUsage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 
-    if (!albedoImage.Create(_device, extent, ImageFormat::RGBA8_UNORM, colorUsage))
+    VulkanImageCreateInfo imageInfo{};
+    imageInfo.device = _device;
+    imageInfo.extent = extent;
+    imageInfo.usage = colorUsage;
+
+    imageInfo.format = ImageFormat::RGBA8_UNORM;
+    if (!albedoImage.Create(imageInfo))
     {
         Destroy();
         return false;
     }
 
-    if (!normalImage.Create(_device, extent, ImageFormat::RGBA16_FLOAT, colorUsage))
+    imageInfo.format = ImageFormat::RGBA16_FLOAT;
+    if (!normalImage.Create(imageInfo))
     {
         Destroy();
         return false;
     }
 
-    if (!materialImage.Create(_device, extent, ImageFormat::RGBA8_UNORM, colorUsage))
+    imageInfo.format = ImageFormat::RGBA8_UNORM;
+    if (!materialImage.Create(imageInfo))
     {
         Destroy();
         return false;
     }
 
-    if (!depthImage.Create(_device, extent, ImageFormat::D32_FLOAT, depthUsage))
+    imageInfo.format = ImageFormat::D32_FLOAT;
+    imageInfo.usage = depthUsage;
+    if (!depthImage.Create(imageInfo))
     {
         Destroy();
         return false;

@@ -53,35 +53,16 @@ VulkanImage& VulkanImage::operator=(VulkanImage&& other) noexcept
     return *this;
 }
 
-bool VulkanImage::Create(VkDevice _device, VkImage _image, VkFormat _format, VkImageAspectFlags aspect)
+bool VulkanImage::Create(const VulkanImageCreateInfo& createInfo)
 {
-    if (!_device || !_image || _format == VK_FORMAT_UNDEFINED) return false;
+    if (!createInfo.device || createInfo.extent.width == 0) return false;
+    if (createInfo.extent.width == 0 || createInfo.extent.height == 0) return false;
+    if (createInfo.mipLevels == 0 || createInfo.arrayLayers == 0) return false;
 
-    Destroy();
-
-    device = _device;
-    image = _image;
-    format = _format;
-    ownsImage = false;
-
-    if (!CreateImageView(aspect))
-    {
-        Destroy();
-        return false;
-    }
-
-    return true;
-}
-
-bool VulkanImage::Create(VulkanDevice* _device, VkExtent2D extent, ImageFormat _format, VkImageUsageFlags usage,
-    uint32 mipLevels, uint32 arrayLayers)
-{
-    if (!_device || extent.width == 0 || extent.height == 0 || mipLevels == 0 || arrayLayers == 0) return false;
-
-    const VkDevice buffDevice = _device->GetDevice();
+    const VkDevice buffDevice = createInfo.device->GetDevice();
     if (!buffDevice) return false;
 
-    const VkFormat buffFormat = VulkanImageFormat::FromImageFormat(_format);
+    const VkFormat buffFormat = VulkanImageFormat::FromImageFormat(createInfo.format);
     if (buffFormat == VK_FORMAT_UNDEFINED) return false;
 
     Destroy();
@@ -91,14 +72,15 @@ bool VulkanImage::Create(VulkanDevice* _device, VkExtent2D extent, ImageFormat _
 
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.flags = createInfo.flags;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
-    imageInfo.extent = { extent.width, extent.height, 1 };
-    imageInfo.mipLevels = mipLevels;
-    imageInfo.arrayLayers = arrayLayers;
+    imageInfo.extent = { createInfo.extent.width, createInfo.extent.height, 1 };
+    imageInfo.mipLevels = createInfo.mipLevels;
+    imageInfo.arrayLayers = createInfo.arrayLayers;
     imageInfo.format = format;
     imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageInfo.usage = usage;
+    imageInfo.usage = createInfo.usage;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     imageInfo.pNext = nullptr;
@@ -114,7 +96,7 @@ bool VulkanImage::Create(VulkanDevice* _device, VkExtent2D extent, ImageFormat _
     VkMemoryRequirements memoryReqs{};
     vkGetImageMemoryRequirements(device, image, &memoryReqs);
 
-    const uint32 memoryTypeIndex = _device->FindMemoryType(memoryReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    const uint32 memoryTypeIndex = createInfo.device->FindMemoryType(memoryReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     if (memoryTypeIndex == UINT32_MAX)
     {
@@ -140,7 +122,27 @@ bool VulkanImage::Create(VulkanDevice* _device, VkExtent2D extent, ImageFormat _
         return false;
     }
 
-    if (!CreateImageView(VulkanImageFormat::GetImageAspect(_format), mipLevels, arrayLayers))
+    if (!CreateImageView(VulkanImageFormat::GetImageAspect(createInfo.format), createInfo.mipLevels, createInfo.arrayLayers))
+    {
+        Destroy();
+        return false;
+    }
+
+    return true;
+}
+
+bool VulkanImage::Create(VkDevice _device, VkImage _image, VkFormat _format, VkImageAspectFlags aspect)
+{
+    if (!_device || !_image || _format == VK_FORMAT_UNDEFINED) return false;
+
+    Destroy();
+
+    device = _device;
+    image = _image;
+    format = _format;
+    ownsImage = false;
+
+    if (!CreateImageView(aspect))
     {
         Destroy();
         return false;
