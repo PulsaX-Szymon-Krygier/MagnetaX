@@ -94,7 +94,15 @@ bool VulkanGraphicsSystem::Create(const SurfaceHost& _surfaceHost)
 
     fallbackTexture = std::make_unique<VulkanTexture>();
 
-    if (!fallbackTexture->Create(&device, whitePixel, 1, 1, ImageFormat::RGBA8_SRGB, config.texture))
+    VulkanTextureCreateInfo textureInfo{};
+    textureInfo.device = &device;
+    textureInfo.pixels = whitePixel;
+    textureInfo.width = 1;
+    textureInfo.height = 1;
+    textureInfo.format = ImageFormat::RGBA8_SRGB;
+    textureInfo.config = config.texture;
+
+    if (!fallbackTexture->Create(textureInfo))
     {
         Destroy();
         return false;
@@ -309,7 +317,15 @@ VulkanTexture* VulkanGraphicsSystem::GetOrCreateTexture(uint64 assetID, TextureA
 
     std::unique_ptr<VulkanTexture> texture = std::make_unique<VulkanTexture>();
 
-    if (!texture->Create(&device, pixels.data(), textureAsset->GetWidth(), textureAsset->GetHeight(), textureAsset->GetFormat(), config.texture))
+    VulkanTextureCreateInfo textureInfo{};
+    textureInfo.device = &device;
+    textureInfo.pixels = pixels.data();
+    textureInfo.width = textureAsset->GetWidth();
+    textureInfo.height = textureAsset->GetHeight();
+    textureInfo.format = textureAsset->GetFormat();
+    textureInfo.config = config.texture;
+
+    if (!texture->Create(textureInfo))
     {
         return nullptr;
     }

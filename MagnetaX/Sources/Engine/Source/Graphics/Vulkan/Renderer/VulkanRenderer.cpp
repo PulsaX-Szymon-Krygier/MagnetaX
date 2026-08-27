@@ -295,7 +295,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(std::span<const VulkanDrawItem> draw
 
     const VkImageMemoryBarrier2 targetWriteBarrier = VulkanInitializers::ImageMemoryBarrier(
         targetImage.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, targetLayout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
         VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
     );
 
@@ -391,6 +391,17 @@ VulkanFrameResult VulkanRenderer::DrawFrame(std::span<const VulkanDrawItem> draw
 
         gBufferDebugPass.Record(gBufferDebugInfo);
     }
+
+    const VkImageMemoryBarrier2 targetUIBarrier = VulkanInitializers::ImageMemoryBarrier(
+        targetImage.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
+    );
+
+    dependencyInfo.pImageMemoryBarriers = &targetUIBarrier;
+
+    vkCmdPipelineBarrier2(cmdBuffer, &dependencyInfo);
 
     VulkanUIPassRenderInfo uiInfo{};
     uiInfo.cmdBuffer = cmdBuffer;

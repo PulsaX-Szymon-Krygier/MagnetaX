@@ -9,50 +9,53 @@
 #include <algorithm>
 #include <cmath>
 
-bool VulkanTexture::Create(VulkanDevice* _device, const uint8* pixels, uint32 width, uint32 height, ImageFormat format, const TextureConfig& config)
+bool VulkanTexture::Create(const VulkanTextureCreateInfo& createInfo)
 {
-    if (!_device || !pixels || width == 0 || height == 0) return false;
+    if (!createInfo.device || !createInfo.pixels) return false;
+    if (createInfo.width == 0 || createInfo.height == 0) return false;
 
-    const VkDevice buffDevice = _device->GetDevice();
+    const VkDevice buffDevice = createInfo.device->GetDevice();
     if (!buffDevice) return false;
 
-    const uint32 bytesPerPixel = ImageFormatUtils::GetBytesPerPixel(format);
+    const uint32 bytesPerPixel = ImageFormatUtils::GetBytesPerPixel(createInfo.format);
     if (bytesPerPixel == 0) return false;
 
     Destroy();
 
     device = buffDevice;
 
-    const VkDeviceSize dataSize = (VkDeviceSize)width * (VkDeviceSize)height * bytesPerPixel;
+    const VkDeviceSize dataSize = (VkDeviceSize)createInfo.width * (VkDeviceSize)createInfo.height * bytesPerPixel;
 
     VulkanBuffer stagingBuffer;
     const VkMemoryPropertyFlags stagingMemoryProperties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
-    if (!stagingBuffer.Create(_device, dataSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemoryProperties))
+    if (!stagingBuffer.Create(createInfo.device, dataSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemoryProperties))
     {
         Destroy();
         return false;
     }
 
-    if (!stagingBuffer.Upload(pixels, dataSize))
+    if (!stagingBuffer.Upload(createInfo.pixels, dataSize))
     {
         stagingBuffer.Destroy();
         Destroy();
         return false;
     }
 
-    const VkExtent2D extent{ width, height };
-    const uint32 mipLevels = config.mipmaps ? (uint32)std::floor(std::log2((float32)std::max(width, height))) + 1 : 1;
+    const VkExtent2D extent{ createInfo.width, createInfo.height };
+    const uint32 mipLevels = createInfo.config.mipmaps ?
+        (uint32)std::floor(std::log2((float32)std::max(createInfo.width, createInfo.height))) + 1 : 1;
+
     const VkImageUsageFlags imageUsage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 
-    if (!image.Create(_device, extent, format, imageUsage, mipLevels))
+    if (!image.Create(createInfo.device, extent, createInfo.format, imageUsage, mipLevels))
     {
         stagingBuffer.Destroy();
         Destroy();
         return false;
     }
 
-    if (!UploadPixels(_device, stagingBuffer.GetBuffer(), width, height, mipLevels))
+    if (!UploadPixels(createInfo.device, stagingBuffer.GetBuffer(), createInfo.width, createInfo.height, mipLevels))
     {
         stagingBuffer.Destroy();
         Destroy();
@@ -61,19 +64,19 @@ bool VulkanTexture::Create(VulkanDevice* _device, const uint8* pixels, uint32 wi
 
     stagingBuffer.Destroy();
 
-    const GraphicsCapabilities& caps = _device->GetCapabilities();
+    const GraphicsCapabilities& caps = createInfo.device->GetCapabilities();
 
-    const bool anisoEnabled = caps.samplerAniso && config.anisotropy > 1.0f;
-    const float32 aniso = anisoEnabled ? std::min(config.anisotropy, caps.maxSamplerAniso) : 1.0f;
+    const bool anisoEnabled = caps.samplerAniso && createInfo.config.anisotropy > 1.0f;
+    const float32 aniso = anisoEnabled ? std::min(createInfo.config.anisotropy, caps.maxSamplerAniso) : 1.0f;
 
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     samplerInfo.magFilter = VK_FILTER_LINEAR;
     samplerInfo.minFilter = VK_FILTER_LINEAR;
     samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeU = createInfo.addressModeU;
+    samplerInfo.addressModeV = createInfo.addressModeV;
+    samplerInfo.addressModeW = createInfo.addressModeW;
     samplerInfo.minLod = 0.0f;
     samplerInfo.maxLod = (float32)(mipLevels - 1);
     samplerInfo.anisotropyEnable = anisoEnabled ? VK_TRUE : VK_FALSE;

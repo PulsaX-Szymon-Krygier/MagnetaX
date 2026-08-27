@@ -7,6 +7,22 @@
 #include <Graphics/Vulkan/VulkanCommon.h>
 #include "VulkanImage.h"
 
+struct VulkanTextureCreateInfo
+{
+    VulkanDevice* device = nullptr;
+
+    const uint8* pixels = nullptr;
+    uint32 width = 0;
+    uint32 height = 0;
+    ImageFormat format = ImageFormat::UNKNOWN;
+
+    TextureConfig config{};
+
+    VkSamplerAddressMode addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    VkSamplerAddressMode addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    VkSamplerAddressMode addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+};
+
 class VulkanTexture
 {
 public:
@@ -14,7 +30,7 @@ public:
     VulkanTexture(const VulkanTexture&) = delete;
     VulkanTexture& operator=(const VulkanTexture&) = delete;
 
-    bool Create(VulkanDevice* _device, const uint8* pixels, uint32 width, uint32 height, ImageFormat format, const TextureConfig& config);
+    bool Create(const VulkanTextureCreateInfo& createInfo);
     void Destroy();
 
     VkImageView GetImageView() const { return image.GetImageView(); }

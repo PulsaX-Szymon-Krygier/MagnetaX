@@ -229,11 +229,15 @@ bool VulkanUIPass::SetFont(const UIFont& _font)
     fontConfig.mipmaps = false;
     fontConfig.anisotropy = 1.0f;
 
-    if (!fontAtlas.Create(device, _font.GetAtlasPixels().data(), _font.GetAtlasWidth(),
-        _font.GetAtlasHeight(), ImageFormat::R8_UNORM, fontConfig))
-    {
-        return false;
-    }
+    VulkanTextureCreateInfo textureInfo{};
+    textureInfo.device = device;
+    textureInfo.pixels = _font.GetAtlasPixels().data();
+    textureInfo.width = _font.GetAtlasWidth();
+    textureInfo.height = _font.GetAtlasHeight();
+    textureInfo.config = fontConfig;
+    textureInfo.format = ImageFormat::R8_UNORM;
+
+    if (!fontAtlas.Create(textureInfo)) return false;
 
     VkDescriptorImageInfo imageInfo{};
     imageInfo.sampler = fontAtlas.GetSampler();

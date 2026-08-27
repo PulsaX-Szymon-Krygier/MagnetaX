@@ -5,6 +5,8 @@
 #include <MX/Core/CoreMinimal.h>
 #include <MX/Core/Math/Matrix.h>
 #include <MX/Core/Math/Vector.h>
+#include <MX/Assets/AssetHandle.h>
+#include <MX/Assets/Texture/TextureAsset.h>
 #include "RenderLight.h"
 #include "RenderObject.h"
 #include <vector>
@@ -25,4 +27,6 @@ struct RenderSceneData
 
     std::vector<RenderLight> lights;
     std::vector<RenderObject> objects;
+
+    AssetHandle<TextureAsset> environmentMap;
 };
