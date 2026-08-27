@@ -113,6 +113,9 @@ void TestGame::OnInit()
 
     Entity sun = createLight(LightType::DIRECTIONAL, Vector3f(0.0f), Vector3f(1.0f, 1.0f, 1.0f), 10.0f, 0.0f);
     sun.GetComponent<TransformComponent>()->rotation = Quaternion::FromYawPitchRollDegrees(-30.0f, -30.0f, 0.0f);
+    LightComponent* dirLight = sun.GetComponent<LightComponent>();
+    dirLight->intensity = 10.0f;
+    dirLight->castShadows = true;
 
     Entity spot = createLight(LightType::SPOT, Vector3f(0.0f, 5.0f, -2.0f), Vector3f(1.0f, 0.9f, 0.8f), 35.0f, 12.0f);
     spot.GetComponent<TransformComponent>()->rotation = Quaternion::FromYawPitchRollDegrees(0.0f, -90.0f, 0.0f);
@@ -121,6 +124,7 @@ void TestGame::OnInit()
     spotLight->innerConeAngle = 25.0f;
     spotLight->outerConeAngle = 40.0f;
     spotLight->castShadows = true;
+    spotLight->intensity = 0.0f;
 }
 
 void TestGame::OnUpdate(float64 deltaTime)
