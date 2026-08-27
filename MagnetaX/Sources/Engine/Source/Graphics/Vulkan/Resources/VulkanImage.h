@@ -49,5 +49,5 @@ private:
 
     bool ownsImage = false;
 
-    bool CreateImageView(VkImageAspectFlags aspect, uint32 mipLevels = 1, uint32 arrayLayers = 1);
+    bool CreateImageView(VkImageAspectFlags aspect, VkImageViewType viewType = VK_IMAGE_VIEW_TYPE_2D, uint32 mipLevels = 1, uint32 arrayLayers = 1);
 };

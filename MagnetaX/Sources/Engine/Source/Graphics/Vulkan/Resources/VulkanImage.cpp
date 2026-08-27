@@ -122,7 +122,7 @@ bool VulkanImage::Create(const VulkanImageCreateInfo& createInfo)
         return false;
     }
 
-    if (!CreateImageView(VulkanImageFormat::GetImageAspect(createInfo.format), createInfo.mipLevels, createInfo.arrayLayers))
+    if (!CreateImageView(VulkanImageFormat::GetImageAspect(createInfo.format), createInfo.viewType, createInfo.mipLevels, createInfo.arrayLayers))
     {
         Destroy();
         return false;
@@ -174,14 +174,14 @@ void VulkanImage::Destroy()
     ownsImage = false;
 }
 
-bool VulkanImage::CreateImageView(VkImageAspectFlags aspect, uint32 mipLevels, uint32 arrayLayers)
+bool VulkanImage::CreateImageView(VkImageAspectFlags aspect, VkImageViewType viewType, uint32 mipLevels, uint32 arrayLayers)
 {
     if (!device || !image || format == VK_FORMAT_UNDEFINED) return false;
 
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = image;
-    viewInfo.viewType = arrayLayers > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.viewType = viewType;
     viewInfo.format = format;
     viewInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
     viewInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
