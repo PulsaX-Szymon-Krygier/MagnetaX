@@ -33,7 +33,9 @@ void TestGame::OnInit()
     env.ambientLightIntensity = 0.01f;
 
     Entity testEntity = scene1.CreateEntity();
-    testEntity.AddComponent<CameraComponent>();
+    CameraComponent& camera = testEntity.AddComponent<CameraComponent>();
+    camera.exposureEV = -3.0f;
+
     testEntity.AddComponent<ScriptComponent>().AddScript<CameraScript>();
 
     scene1.SetActiveCamera(testEntity);
@@ -50,7 +52,7 @@ void TestGame::OnInit()
     AssetHandle<TextureAsset> hdri1 = GetAssetManager().CreateAsset<TextureAsset>(AssetSource((assetsPath / "HDRI/qwantani_moonrise_puresky_4k.hdr").string()), ImageFormat::RGBA32_FLOAT);
     AssetHandle<TextureAsset> hdri2 = GetAssetManager().CreateAsset<TextureAsset>(AssetSource((assetsPath / "HDRI/malagas_ferry_road_4k.hdr").string()), ImageFormat::RGBA32_FLOAT);
 
-    env.environmentMap = hdri2;
+    env.environmentMap = hdri1;
 
     auto createMaterial = 
         [&](const Vector4f& color, float32 roughness, float32 metallic, AssetHandle<TextureAsset> texture = {}, float32 scale = 1.0f)
