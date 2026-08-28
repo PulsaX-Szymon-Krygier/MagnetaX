@@ -6,14 +6,15 @@
 #include <MX/Graphics/Renderer/RendererConfig.h>
 #include <Graphics/Vulkan/VulkanCommon.h>
 #include <Graphics/Vulkan/Resources/VulkanImage.h>
+#include "VulkanCommandPool.h"
+#include "VulkanDrawItem.h"
 #include "Deferred/VulkanGBufferDebugPass.h"
 #include "Deferred/VulkanGBufferPass.h"
 #include "Deferred/VulkanLightingPass.h"
 #include "PostFX/VulkanPostFXPass.h"
 #include "Shadow/VulkanShadowDepthPass.h"
 #include "UI/VulkanUIPass.h"
-#include "VulkanCommandPool.h"
-#include "VulkanDrawItem.h"
+#include "Environment/VulkanSkyPass.h"
 #include <span>
 #include <vector>
 
@@ -48,7 +49,9 @@ public:
     bool Create(const VulkanRendererCreateInfo& createInfo);
     void Destroy();
 
-    VulkanFrameResult DrawFrame(std::span<const VulkanDrawItem> drawItems, const RenderSceneData& sceneData, const UIRenderData& uiData);
+    // Make VulkanRendererFrameInfo?
+    VulkanFrameResult DrawFrame(std::span<const VulkanDrawItem> drawItems, const RenderSceneData& sceneData, const UIRenderData& uiData,
+        VkImageView environmentView, VkSampler environmentSampler);
 
     void SetDebugView(GraphicsDebugView view) { debugView = view; }
 
@@ -74,6 +77,8 @@ private:
 
     VulkanPostFXPass postFXPass;
     VulkanUIPass uiPass;
+
+    VulkanSkyPass skyPass;
 
     VkSemaphore imageAvailable = VK_NULL_HANDLE;
     std::vector<VkSemaphore> renderFinishedSemaphores;

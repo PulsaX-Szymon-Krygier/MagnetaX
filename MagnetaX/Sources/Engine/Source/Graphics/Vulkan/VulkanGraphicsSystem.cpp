@@ -13,6 +13,7 @@
 #include <Graphics/Vulkan/Resources/VulkanMaterial.h>
 #include <Graphics/Vulkan/Resources/VulkanMesh.h>
 #include <Graphics/Vulkan/Resources/VulkanTexture.h>
+#include <Graphics/Vulkan/Renderer/VulkanCommandPool.h>
 #include "VulkanInitializers.h"
 #include <vector>
 
@@ -127,6 +128,16 @@ bool VulkanGraphicsSystem::Create(const SurfaceHost& _surfaceHost)
         return false;
     }
 
+    VulkanEquirectPassCreateInfo equirectInfo{};
+    equirectInfo.device = &device;
+    equirectInfo.outFormat = VulkanImageFormat::FromImageFormat(ImageFormat::RGBA16_FLOAT);
+
+    if (!equirectPass.Create(equirectInfo))
+    {
+        Destroy();
+        return false;
+    }
+
     if (!RecreateRenderer(surfaceSize))
     {
         Destroy();
@@ -139,6 +150,8 @@ bool VulkanGraphicsSystem::Create(const SurfaceHost& _surfaceHost)
 void VulkanGraphicsSystem::Destroy()
 {
     renderContext.Destroy();
+
+    equirectPass.Destroy();
 
     for (auto& material : materials)
     {
@@ -161,6 +174,7 @@ void VulkanGraphicsSystem::Destroy()
     fallbackTexture.reset();
 
     // Temporary place!!!
+    DestroyEnvironmentCubemap();
     if (environmentTexture) environmentTexture->Destroy();
     environmentTexture.reset();
     environmentMapAssetID = 0;
@@ -230,10 +244,20 @@ void VulkanGraphicsSystem::RenderScene(Scene* scene, AssetManager* assetManager,
     const Size2i renderSize(extent.width, extent.height);
     const RenderSceneData sceneData = BuildRenderSceneData(scene, renderSize);
 
+    // --------------------------------------------------------------
+    // Temporary place for env texture/map code
+    // I will move it to proper place after testing
     const uint64 envAssetID = sceneData.environmentMap.GetID();
 
     if (envAssetID != environmentMapAssetID)
     {
+        if (device.GetDevice())
+        {
+            vkDeviceWaitIdle(device.GetDevice());
+        }
+
+        DestroyEnvironmentCubemap();
+
         if (environmentTexture) environmentTexture->Destroy();
         environmentTexture.reset();
 
@@ -270,8 +294,97 @@ void VulkanGraphicsSystem::RenderScene(Scene* scene, AssetManager* assetManager,
 
                     environmentTexture = std::make_unique<VulkanTexture>();
 
-                    if (!environmentTexture->Create(textureInfo))
+                    bool environmentReady = environmentTexture->Create(textureInfo);
+
+                    const uint32 width = envTexture->GetWidth();
+                    const uint32 height = envTexture->GetHeight();
+
+                    if (environmentReady && (height == 0 || width != height * 2))
                     {
+                        environmentReady = false;
+                    }
+
+                    const uint32 faceSize = width / 4;
+
+                    if (environmentReady)
+                    {
+                        VulkanImageCreateInfo imageInfo{};
+                        imageInfo.device = &device;
+                        imageInfo.extent = { faceSize, faceSize };
+                        imageInfo.format = ImageFormat::RGBA16_FLOAT;
+                        imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+                        imageInfo.arrayLayers = 6;
+                        imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+                        imageInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+
+                        if (!environmentCubemap.Create(imageInfo))
+                        {
+                            environmentReady = false;
+                        }
+                    }
+
+                    if (environmentReady)
+                    {
+                        for (uint32 i = 0; i < environmentCubemapFaceViews.size(); ++i)
+                        {
+                            VkImageViewCreateInfo viewInfo{};
+                            viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+                            viewInfo.image = environmentCubemap.GetImage();
+                            viewInfo.format = environmentCubemap.GetFormat();
+                            viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+                            viewInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+                            viewInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+                            viewInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+                            viewInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+                            viewInfo.subresourceRange.baseMipLevel = 0;
+                            viewInfo.subresourceRange.baseArrayLayer = i;
+                            viewInfo.subresourceRange.layerCount = 1;
+                            viewInfo.subresourceRange.levelCount = 1;
+                            viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                            viewInfo.pNext = nullptr;
+
+                            if (vkCreateImageView(device.GetDevice(), &viewInfo, nullptr, &environmentCubemapFaceViews[i]) != VK_SUCCESS)
+                            {
+                                environmentReady = false;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (environmentReady)
+                    {
+                        const VkExtent2D environmentExtent{ faceSize, faceSize };
+
+                        if (!ConvertEnvironmentCubemap(environmentExtent))
+                        {
+                            environmentReady = false;
+                        }
+                    }
+
+                    if (environmentReady)
+                    {
+                        VkSamplerCreateInfo samplerInfo{};
+                        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+                        samplerInfo.magFilter = VK_FILTER_LINEAR;
+                        samplerInfo.minFilter = VK_FILTER_LINEAR;
+                        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+                        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+                        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+                        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+                        samplerInfo.minLod = 0.0f;
+                        samplerInfo.maxLod = 0.0f;
+
+                        if (vkCreateSampler(device.GetDevice(), &samplerInfo, nullptr, &environmentCubemapSampler) != VK_SUCCESS)
+                        {
+                            environmentReady = false;
+                        }
+                    }
+
+                    if (!environmentReady)
+                    {
+                        DestroyEnvironmentCubemap();
+
+                        if (environmentTexture) environmentTexture->Destroy();
                         environmentTexture.reset();
                     }
                 }
@@ -282,6 +395,7 @@ void VulkanGraphicsSystem::RenderScene(Scene* scene, AssetManager* assetManager,
         // Add proper logic in the future
         environmentMapAssetID = envAssetID;
     }
+    // --------------------------------------------------------------
 
     std::vector<VulkanDrawItem> drawItems;
     drawItems.reserve(sceneData.objects.size());
@@ -337,7 +451,8 @@ void VulkanGraphicsSystem::RenderScene(Scene* scene, AssetManager* assetManager,
         }
     }
 
-    const VulkanFrameResult frameResult = renderer.DrawFrame(drawItems, sceneData, uiData);
+    const VulkanFrameResult frameResult = renderer.DrawFrame(drawItems, sceneData, uiData,
+        environmentCubemap.GetImageView(), environmentCubemapSampler);
 
     if (frameResult == VulkanFrameResult::RECREATE)
     {
@@ -476,5 +591,97 @@ VulkanMesh* VulkanGraphicsSystem::GetOrCreateMesh(uint64 assetID, MeshAsset* mes
     meshes.emplace(assetID, std::move(mesh));
 
     return result;
+}
+
+void VulkanGraphicsSystem::DestroyEnvironmentCubemap()
+{
+    const VkDevice buffDevice = device.GetDevice();
+
+    if (buffDevice)
+    {
+        if (environmentCubemapSampler) vkDestroySampler(buffDevice, environmentCubemapSampler, nullptr);
+        environmentCubemapSampler = VK_NULL_HANDLE;
+
+        for (VkImageView& view : environmentCubemapFaceViews)
+        {
+            if (view) vkDestroyImageView(buffDevice, view, nullptr);
+            view = VK_NULL_HANDLE;
+        }
+    }
+
+    environmentCubemap.Destroy();
+}
+
+bool VulkanGraphicsSystem::ConvertEnvironmentCubemap(VkExtent2D extent)
+{
+    if (!environmentTexture || !environmentCubemap.GetImage()) return false;
+    if (extent.width == 0 || extent.height == 0) return false;
+
+    const VkDevice buffDevice = device.GetDevice();
+    if (!buffDevice) return false;
+
+    VulkanCommandPool commandPool;
+
+    if (!commandPool.Create(buffDevice, device.GetGraphicsQueueFamily())) return false;
+
+    const VkCommandBuffer cmdBuffer = commandPool.AllocateCommandBuffer();
+
+    if (!cmdBuffer)
+    {
+        commandPool.Destroy();
+        return false;
+    }
+
+    const VkCommandBufferBeginInfo beginInfo = VulkanInitializers::CommandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+
+    if (vkBeginCommandBuffer(cmdBuffer, &beginInfo) != VK_SUCCESS)
+    {
+        commandPool.Destroy();
+        return false;
+    }
+
+    VulkanEquirectPassRenderInfo renderInfo{};
+    renderInfo.cmdBuffer = cmdBuffer;
+    renderInfo.sourceTexture = environmentTexture.get();
+    renderInfo.targetImage = environmentCubemap.GetImage();
+    renderInfo.targetViews = std::span<const VkImageView>(environmentCubemapFaceViews);
+    renderInfo.extent = extent;
+
+    equirectPass.Record(renderInfo);
+
+    if (vkEndCommandBuffer(cmdBuffer) != VK_SUCCESS)
+    {
+        commandPool.Destroy();
+        return false;
+    }
+
+    VkCommandBufferSubmitInfo cmdBufferInfo{};
+    cmdBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+    cmdBufferInfo.commandBuffer = cmdBuffer;
+    cmdBufferInfo.pNext = nullptr;
+
+    VkSubmitInfo2 submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+    submitInfo.commandBufferInfoCount = 1;
+    submitInfo.pCommandBufferInfos = &cmdBufferInfo;
+    submitInfo.pNext = nullptr;
+
+    const VkQueue graphicsQueue = device.GetGraphicsQueue();
+
+    if (vkQueueSubmit2(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS)
+    {
+        commandPool.Destroy();
+        return false;
+    }
+
+    if (vkQueueWaitIdle(graphicsQueue) != VK_SUCCESS)
+    {
+        commandPool.Destroy();
+        return false;
+    }
+
+    commandPool.Destroy();
+
+    return true;
 }
 #endif

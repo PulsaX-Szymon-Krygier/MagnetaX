@@ -5,11 +5,13 @@
 #include <MX/Graphics/AbstractGraphicsSystem.h>
 #include <MX/Graphics/Resources/ImageFormat.h>
 #include <Graphics/Vulkan/Present/VulkanSurface.h>
+#include <Graphics/Vulkan/Renderer/Environment/VulkanEquirectPass.h>
 #include "VulkanDevice.h"
 #include "VulkanInstance.h"
 #include "VulkanRenderContext.h"
 #include <memory>
 #include <unordered_map>
+#include <array>
 
 class MaterialAsset;
 class MeshAsset;
@@ -64,4 +66,12 @@ private:
     // Maybe VulkanEnvironment class or context??
     uint64 environmentMapAssetID = 0;
     std::unique_ptr<VulkanTexture> environmentTexture;
+    VulkanImage environmentCubemap;
+    std::array<VkImageView, 6> environmentCubemapFaceViews{};
+    VulkanEquirectPass equirectPass;
+    VkSampler environmentCubemapSampler = VK_NULL_HANDLE;
+
+    void DestroyEnvironmentCubemap();
+    bool ConvertEnvironmentCubemap(VkExtent2D extent);
+    // ----------------------------
 };

@@ -19,6 +19,7 @@ RenderSceneData BuildRenderSceneData(Scene* scene, const Size2i& renderSize)
     sceneData.backgroundColor = environment.backgroundColor;
     sceneData.ambientLightColor = environment.ambientLightColor;
     sceneData.ambientLightIntensity = environment.ambientLightIntensity;
+    sceneData.environmentMap = environment.environmentMap;
 
     scene->ForEach<LightComponent>(
         [&](Entity entity, LightComponent& lightComponent)
@@ -63,7 +64,6 @@ RenderSceneData BuildRenderSceneData(Scene* scene, const Size2i& renderSize)
     sceneData.cameraPosition = Vector3f(cameraWorldMatrix.m03, cameraWorldMatrix.m13, cameraWorldMatrix.m23);
     sceneData.cameraNearPlane = cameraComponent->nearPlane;
     sceneData.cameraFarPlane = cameraComponent->farPlane;
-    sceneData.environmentMap = environment.environmentMap;
 
     scene->ForEach<MeshComponent>(
         [&](Entity entity, MeshComponent& meshComponent)

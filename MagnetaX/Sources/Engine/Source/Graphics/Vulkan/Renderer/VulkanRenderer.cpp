@@ -142,6 +142,17 @@ bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
         return false;
     }
 
+    VulkanSkyPassCreateInfo skyInfo{};
+    skyInfo.device = device;
+    skyInfo.gBuffer = &gBufferPass.GetGBuffer();
+    skyInfo.outFormat = sceneColor.GetFormat();
+
+    if (!skyPass.Create(skyInfo))
+    {
+        Destroy();
+        return false;
+    }
+
     VulkanGBufferDebugPassCreateInfo gBufferDebugInfo{};
     gBufferDebugInfo.device = device;
     gBufferDebugInfo.gBuffer = &gBufferPass.GetGBuffer();
@@ -187,6 +198,9 @@ void VulkanRenderer::Destroy()
     postFXPass.Destroy();
 
     gBufferDebugPass.Destroy();
+
+    skyPass.Destroy();
+
     lightingPass.Destroy();
 
     sceneColor.Destroy();
@@ -230,7 +244,8 @@ void VulkanRenderer::Destroy()
     device = nullptr;
 }
 
-VulkanFrameResult VulkanRenderer::DrawFrame(std::span<const VulkanDrawItem> drawItems, const RenderSceneData& sceneData, const UIRenderData& uiData)
+VulkanFrameResult VulkanRenderer::DrawFrame(std::span<const VulkanDrawItem> drawItems, const RenderSceneData& sceneData,
+    const UIRenderData& uiData, VkImageView environmentView, VkSampler environmentSampler)
 {
     if (!device || !presentContext || !cmdBuffer) return VulkanFrameResult::FAILED;
     if (!imageAvailable || !inFlight) return VulkanFrameResult::FAILED;
@@ -346,6 +361,32 @@ VulkanFrameResult VulkanRenderer::DrawFrame(std::span<const VulkanDrawItem> draw
         lightingInfo.shadowData = &shadowData;
 
         lightingPass.Record(lightingInfo);
+
+        const bool hasEnvironment = environmentView && environmentSampler;
+
+        if (hasEnvironment)
+        {
+            const VkImageMemoryBarrier2 sceneColorSkyBarrier = VulkanInitializers::ImageMemoryBarrier(
+                sceneColor.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
+            );
+
+            dependencyInfo.pImageMemoryBarriers = &sceneColorSkyBarrier;
+
+            vkCmdPipelineBarrier2(cmdBuffer, &dependencyInfo);
+
+            VulkanSkyPassRenderInfo skyInfo{};
+            skyInfo.cmdBuffer = cmdBuffer;
+            skyInfo.targetView = sceneColor.GetImageView();
+            skyInfo.extent = extent;
+            skyInfo.environmentView = environmentView;
+            skyInfo.environmentSampler = environmentSampler;
+            skyInfo.sceneData = &sceneData;
+
+            skyPass.Record(skyInfo);
+        }
 
         const VkImageMemoryBarrier2 sceneColorReadBarrier = VulkanInitializers::ImageMemoryBarrier(
             sceneColor.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
