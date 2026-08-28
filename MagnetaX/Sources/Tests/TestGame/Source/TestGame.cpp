@@ -47,9 +47,10 @@ void TestGame::OnInit()
     AssetHandle<MeshAsset> meshCube = GetAssetManager().CreateAsset<MeshAsset>(AssetSource((assetsPath / "Models/cube.obj").string()));
     AssetHandle<MeshAsset> meshSphere = GetAssetManager().CreateAsset<MeshAsset>(AssetSource((assetsPath / "Models/sphere.obj").string()), true);
 
-    AssetHandle<TextureAsset> hdri = GetAssetManager().CreateAsset<TextureAsset>(AssetSource((assetsPath / "HDRI/qwantani_moonrise_puresky_4k.hdr").string()), ImageFormat::RGBA32_FLOAT);
+    AssetHandle<TextureAsset> hdri1 = GetAssetManager().CreateAsset<TextureAsset>(AssetSource((assetsPath / "HDRI/qwantani_moonrise_puresky_4k.hdr").string()), ImageFormat::RGBA32_FLOAT);
+    AssetHandle<TextureAsset> hdri2 = GetAssetManager().CreateAsset<TextureAsset>(AssetSource((assetsPath / "HDRI/malagas_ferry_road_4k.hdr").string()), ImageFormat::RGBA32_FLOAT);
 
-    env.environmentMap = hdri;
+    env.environmentMap = hdri2;
 
     auto createMaterial = 
         [&](const Vector4f& color, float32 roughness, float32 metallic, AssetHandle<TextureAsset> texture = {}, float32 scale = 1.0f)
@@ -67,11 +68,11 @@ void TestGame::OnInit()
         };
 
     AssetHandle<MaterialAsset> matWall = createMaterial(Vector4f(0.5f, 0.6f, 0.7f, 1.0f), 0.9f, 0.0f);
-    AssetHandle<MaterialAsset> matPlatform = createMaterial(Vector4f(0.8f, 0.8f, 0.8f, 1.0f), 0.6f, 0.0f, txtGrey, 4.0f);
-    AssetHandle<MaterialAsset> mat1 = createMaterial(Vector4f(1.0f), 0.8f, 0.0f, txtOrange);
-    AssetHandle<MaterialAsset> mat2 = createMaterial(Vector4f(1.0f), 0.2f, 0.6f, txtOrange);
-    AssetHandle<MaterialAsset> mat3 = createMaterial(Vector4f(1.0f), 0.6f, 1.0f, txtGrey);
-    AssetHandle<MaterialAsset> mat4 = createMaterial(Vector4f(1.0f), 0.3f, 1.0f, txtGrey);
+    AssetHandle<MaterialAsset> matPlatform = createMaterial(Vector4f(0.8f, 0.8f, 0.8f, 1.0f), 1.0f, 0.0f, txtGrey, 4.0f);
+    AssetHandle<MaterialAsset> mat1 = createMaterial(Vector4f(1.0f), 0.0f, 1.0f);
+    AssetHandle<MaterialAsset> mat2 = createMaterial(Vector4f(1.0f), 0.2f, 1.0f);
+    AssetHandle<MaterialAsset> mat3 = createMaterial(Vector4f(1.0f), 0.0f, 0.0f);
+    AssetHandle<MaterialAsset> mat4 = createMaterial(Vector4f(1.0f), 0.8f, 0.0f);
 
     // Entities
     auto createEntity =
@@ -152,6 +153,11 @@ void TestGame::OnUpdate(float64 deltaTime)
     const Input::Keyboard keyboard = GetInput().GetKeyboard();
 
     if (keyboard.KeyPressed(KeyboardKeys::ESCAPE)) RequestExit();
+    if (keyboard.KeyPressed(KeyboardKeys::F1)) GetGraphics().SetDebugView(GraphicsDebugView::FINAL);
+    if (keyboard.KeyPressed(KeyboardKeys::F2)) GetGraphics().SetDebugView(GraphicsDebugView::ALBEDO);
+    if (keyboard.KeyPressed(KeyboardKeys::F3)) GetGraphics().SetDebugView(GraphicsDebugView::NORMAL);
+    if (keyboard.KeyPressed(KeyboardKeys::F4)) GetGraphics().SetDebugView(GraphicsDebugView::MATERIAL);
+    if (keyboard.KeyPressed(KeyboardKeys::F5)) GetGraphics().SetDebugView(GraphicsDebugView::DEPTH);
 }
 
 void TestGame::OnExit()
