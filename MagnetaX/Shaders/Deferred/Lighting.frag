@@ -44,6 +44,8 @@ layout(std430, set = 1, binding = 1) readonly buffer LightBuffer
 // Shadow map sampler
 layout(set = 1, binding = 2) uniform sampler2DArrayShadow directionalShadowMap;
 layout(set = 1, binding = 3) uniform sampler2DShadow spotShadowMap;
+layout(set = 1, binding = 4) uniform samplerCube specularEnvironmentMap;
+layout(set = 1, binding = 5) uniform sampler2D brdfLUT;
 
 layout(location = 0) out vec4 outColor;
 
@@ -88,6 +90,31 @@ float GeometrySmith(vec3 normal, vec3 viewDirection, vec3 lightDirection, float 
 vec3 FresnelSchlick(float cosTheta, vec3 f0)
 {
     return f0 + (1.0 - f0) * pow(1.0 - cosTheta, 5.0);
+}
+
+vec3 FresnelSchlickRoughness(float cosTheta, vec3 f0, float roughness)
+{
+    return f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(1.0 - cosTheta, 5.0);
+}
+
+vec3 CalculateEnvironmentSpecular(vec3 albedo, vec3 normal, vec3 viewDirection, float roughness, float metallic, float ambientOcclusion)
+{
+    vec3 f0 = mix(vec3(0.04), albedo, metallic);
+
+    float nDotV = max(dot(normal, viewDirection), 0.0);
+    vec3 fresnel = FresnelSchlickRoughness(nDotV, f0, roughness);
+
+    vec3 reflectionDirection = reflect(-viewDirection, normal);
+
+    float maxLod = float(textureQueryLevels(specularEnvironmentMap) - 1);
+    vec3 prefilteredColor = textureLod(specularEnvironmentMap, reflectionDirection, roughness * maxLod).rgb;
+
+    vec2 brdf = texture(brdfLUT, vec2(nDotV, roughness)).rg;
+
+    vec3 specular = prefilteredColor * (fresnel * brdf.x + brdf.y);
+
+    //return prefilteredColor * (fresnel * brdf.x + brdf.y);
+    return specular * ambientOcclusion;
 }
 
 vec3 CalculatePBRBRDF(vec3 albedo, vec3 normal, vec3 viewDirection, vec3 lightDirection, float roughness, float metallic)
@@ -292,6 +319,8 @@ void main()
 
     vec3 ambient = ambientKD * albedo * frameData.ambientColorIntensity.rgb * frameData.ambientColorIntensity.a * ambientOcclusion;
     vec3 color = ambient;
+
+    color += CalculateEnvironmentSpecular(albedo, normal, viewDirection, roughness, metallic, ambientOcclusion);
 
     uint lightCount = uint(frameData.lightInfo.x);
 
