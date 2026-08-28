@@ -31,5 +31,5 @@ void main()
 
     vec3 direction = normalize(worldPosition - pc.cameraPosition.xyz);
 
-    outColor = texture(environmentMap, direction);
+    outColor = texture(environmentMap, direction, 0.0);
 }

@@ -56,5 +56,10 @@ void main()
     vec3 direction = GetDir(pc.faceIndex, fragUV);
     vec2 uv = GetEquirectUV(direction);
 
-    outColor = texture(equirectMap, uv);
+    //outColor = texture(equirectMap, uv);
+
+    vec4 color = texture(equirectMap, uv);
+    color.rgb = min(color.rgb, vec3(65504.0));
+
+    outColor = color;
 }
