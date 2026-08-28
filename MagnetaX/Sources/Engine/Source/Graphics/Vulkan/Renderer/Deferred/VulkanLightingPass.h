@@ -33,6 +33,12 @@ struct VulkanLightingPassRenderInfo : VulkanPassRenderInfo
 
     const RenderSceneData* sceneData = nullptr;
     const ShadowFrameData* shadowData = nullptr;
+
+    VkImageView specularEnvView = VK_NULL_HANDLE;
+    VkSampler specularEnvSampler = VK_NULL_HANDLE;
+
+    VkImageView brdfLUTView = VK_NULL_HANDLE;
+    VkSampler brdfLUTSampler = VK_NULL_HANDLE;
 };
 
 class VulkanLightingPass

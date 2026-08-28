@@ -65,7 +65,7 @@ bool VulkanLightingPass::Create(const VulkanLightingPassCreateInfo& createInfo)
         return false;
     }
 
-    VkDescriptorSetLayoutBinding bindings[4]{};
+    VkDescriptorSetLayoutBinding bindings[6]{};
 
     bindings[0].binding = 0;
     bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -89,7 +89,17 @@ bool VulkanLightingPass::Create(const VulkanLightingPassCreateInfo& createInfo)
     bindings[3].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     bindings[3].pImmutableSamplers = &createInfo.spotShadowSampler;
 
-    const VkDescriptorSetLayoutCreateInfo layoutInfo = VulkanInitializers::DescriptorSetLayoutCreateInfo(4, bindings);
+    bindings[4].binding = 4;
+    bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[4].descriptorCount = 1;
+    bindings[4].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    bindings[5].binding = 5;
+    bindings[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[5].descriptorCount = 1;
+    bindings[5].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    const VkDescriptorSetLayoutCreateInfo layoutInfo = VulkanInitializers::DescriptorSetLayoutCreateInfo(6, bindings);
 
     if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descSetLayout) != VK_SUCCESS)
     {
@@ -120,7 +130,7 @@ bool VulkanLightingPass::Create(const VulkanLightingPassCreateInfo& createInfo)
     poolSizes[1].descriptorCount = 1;
 
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[2].descriptorCount = 2;
+    poolSizes[2].descriptorCount = 4;
 
     const VkDescriptorPoolCreateInfo poolInfo = VulkanInitializers::DescriptorPoolCreateInfo(1, 3, poolSizes);
 
@@ -308,6 +318,42 @@ void VulkanLightingPass::Record(const VulkanLightingPassRenderInfo& renderInfo)
     if (!lights.empty())
     {
         if (!lightBuffer.Upload(lights.data(), sizeof(LightingLightData) * lights.size())) return;
+    }
+
+    if (renderInfo.specularEnvView && renderInfo.specularEnvSampler)
+    {
+        VkDescriptorImageInfo specularEnvInfo{};
+        specularEnvInfo.sampler = renderInfo.specularEnvSampler;
+        specularEnvInfo.imageView = renderInfo.specularEnvView;
+        specularEnvInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        VkWriteDescriptorSet specularEnvWrite{};
+        specularEnvWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        specularEnvWrite.dstSet = descSet;
+        specularEnvWrite.dstBinding = 4;
+        specularEnvWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        specularEnvWrite.descriptorCount = 1;
+        specularEnvWrite.pImageInfo = &specularEnvInfo;
+
+        vkUpdateDescriptorSets(device, 1, &specularEnvWrite, 0, nullptr);
+    }
+
+    if (renderInfo.brdfLUTView && renderInfo.brdfLUTSampler)
+    {
+        VkDescriptorImageInfo brdfLUTInfo{};
+        brdfLUTInfo.sampler = renderInfo.brdfLUTSampler;
+        brdfLUTInfo.imageView = renderInfo.brdfLUTView;
+        brdfLUTInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        VkWriteDescriptorSet brdfLUTWrite{};
+        brdfLUTWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        brdfLUTWrite.dstSet = descSet;
+        brdfLUTWrite.dstBinding = 5;
+        brdfLUTWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        brdfLUTWrite.descriptorCount = 1;
+        brdfLUTWrite.pImageInfo = &brdfLUTInfo;
+
+        vkUpdateDescriptorSets(device, 1, &brdfLUTWrite, 0, nullptr);
     }
 
     VkRenderingAttachmentInfo colorAttachment{};

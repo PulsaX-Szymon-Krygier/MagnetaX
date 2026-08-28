@@ -6,6 +6,8 @@
 #include <MX/Graphics/Resources/ImageFormat.h>
 #include <Graphics/Vulkan/Present/VulkanSurface.h>
 #include <Graphics/Vulkan/Renderer/Environment/VulkanEquirectPass.h>
+#include <Graphics/Vulkan/Renderer/Environment/VulkanSpecularEnvPass.h>
+#include <Graphics/Vulkan/Renderer/Environment/VulkanBRDFLUTPass.h>
 #include "VulkanDevice.h"
 #include "VulkanInstance.h"
 #include "VulkanRenderContext.h"
@@ -70,8 +72,20 @@ private:
     std::array<VkImageView, 6> environmentCubemapFaceViews{};
     VulkanEquirectPass equirectPass;
     VkSampler environmentCubemapSampler = VK_NULL_HANDLE;
+    
+    VulkanImage specularEnvironmentCubemap;
+    std::vector<VkImageView> specularEnvironmentViews;
+    VkSampler specularEnvironmentSampler = VK_NULL_HANDLE;
+    VulkanSpecularEnvPass specularEnvPass;
+
+    VulkanImage brdfLUT;
+    VkSampler brdfLUTSampler = VK_NULL_HANDLE;
+    VulkanBRDFLUTPass brdfLUTPass;
 
     void DestroyEnvironmentCubemap();
     bool ConvertEnvironmentCubemap(VkExtent2D extent);
+    void DestroySpecularEnvironment();
+    bool GenerateBRDFLUT();
+    void DestroyBRDFLUT();
     // ----------------------------
 };

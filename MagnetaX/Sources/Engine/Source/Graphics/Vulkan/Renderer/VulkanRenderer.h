@@ -51,7 +51,8 @@ public:
 
     // Make VulkanRendererFrameInfo?
     VulkanFrameResult DrawFrame(std::span<const VulkanDrawItem> drawItems, const RenderSceneData& sceneData, const UIRenderData& uiData,
-        VkImageView environmentView, VkSampler environmentSampler);
+        VkImageView environmentView, VkSampler environmentSampler, VkImageView specularEnvView, VkSampler specularEnvSampler,
+        VkImageView brdfLUTView, VkSampler brdfLUTSampler);
 
     void SetDebugView(GraphicsDebugView view) { debugView = view; }
 

@@ -245,7 +245,8 @@ void VulkanRenderer::Destroy()
 }
 
 VulkanFrameResult VulkanRenderer::DrawFrame(std::span<const VulkanDrawItem> drawItems, const RenderSceneData& sceneData,
-    const UIRenderData& uiData, VkImageView environmentView, VkSampler environmentSampler)
+    const UIRenderData& uiData, VkImageView environmentView, VkSampler environmentSampler, VkImageView specularEnvView, VkSampler specularEnvSampler,
+    VkImageView brdfLUTView, VkSampler brdfLUTSampler)
 {
     if (!device || !presentContext || !cmdBuffer) return VulkanFrameResult::FAILED;
     if (!imageAvailable || !inFlight) return VulkanFrameResult::FAILED;
@@ -359,6 +360,10 @@ VulkanFrameResult VulkanRenderer::DrawFrame(std::span<const VulkanDrawItem> draw
         lightingInfo.extent = extent;
         lightingInfo.sceneData = &sceneData;
         lightingInfo.shadowData = &shadowData;
+        lightingInfo.specularEnvView = specularEnvView;
+        lightingInfo.specularEnvSampler = specularEnvSampler;
+        lightingInfo.brdfLUTView = brdfLUTView;
+        lightingInfo.brdfLUTSampler = brdfLUTSampler;
 
         lightingPass.Record(lightingInfo);
 

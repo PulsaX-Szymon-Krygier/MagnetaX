@@ -17,6 +17,14 @@
 #include "VulkanInitializers.h"
 #include <vector>
 
+namespace
+{
+    constexpr uint32 SPECULAR_ENV_SIZE = 256;
+    constexpr uint32 SPECULAR_ENV_MIP_LEVELS = 5;
+
+    constexpr uint32 BRDF_LUT_SIZE = 512;
+}
+
 VulkanGraphicsSystem::VulkanGraphicsSystem() = default;
 VulkanGraphicsSystem::~VulkanGraphicsSystem() = default;
 
@@ -138,6 +146,32 @@ bool VulkanGraphicsSystem::Create(const SurfaceHost& _surfaceHost)
         return false;
     }
 
+    VulkanSpecularEnvPassCreateInfo specularEnvInfo{};
+    specularEnvInfo.device = &device;
+    specularEnvInfo.outFormat = VulkanImageFormat::FromImageFormat(ImageFormat::RGBA16_FLOAT);
+
+    if (!specularEnvPass.Create(specularEnvInfo))
+    {
+        Destroy();
+        return false;
+    }
+
+    VulkanBRDFLUTPassCreateInfo brdfLUTInfo{};
+    brdfLUTInfo.device = &device;
+    brdfLUTInfo.outFormat = VulkanImageFormat::FromImageFormat(ImageFormat::RGBA16_FLOAT);
+
+    if (!brdfLUTPass.Create(brdfLUTInfo))
+    {
+        Destroy();
+        return false;
+    }
+
+    if (!GenerateBRDFLUT())
+    {
+        Destroy();
+        return false;
+    }
+
     if (!RecreateRenderer(surfaceSize))
     {
         Destroy();
@@ -152,6 +186,8 @@ void VulkanGraphicsSystem::Destroy()
     renderContext.Destroy();
 
     equirectPass.Destroy();
+    specularEnvPass.Destroy();
+    brdfLUTPass.Destroy();
 
     for (auto& material : materials)
     {
@@ -175,6 +211,8 @@ void VulkanGraphicsSystem::Destroy()
 
     // Temporary place!!!
     DestroyEnvironmentCubemap();
+    DestroySpecularEnvironment();
+    DestroyBRDFLUT();
     if (environmentTexture) environmentTexture->Destroy();
     environmentTexture.reset();
     environmentMapAssetID = 0;
@@ -257,6 +295,8 @@ void VulkanGraphicsSystem::RenderScene(Scene* scene, AssetManager* assetManager,
         }
 
         DestroyEnvironmentCubemap();
+        DestroySpecularEnvironment();
+        //DestroyBRDFLUT();
 
         if (environmentTexture) environmentTexture->Destroy();
         environmentTexture.reset();
@@ -306,13 +346,23 @@ void VulkanGraphicsSystem::RenderScene(Scene* scene, AssetManager* assetManager,
 
                     const uint32 faceSize = width / 4;
 
+                    uint32 environmentMipLevels = 1;
+
+                    for (uint32 size = faceSize; size > 1; size >>= 1)
+                    {
+                        ++environmentMipLevels;
+                    }
+
                     if (environmentReady)
                     {
                         VulkanImageCreateInfo imageInfo{};
                         imageInfo.device = &device;
                         imageInfo.extent = { faceSize, faceSize };
                         imageInfo.format = ImageFormat::RGBA16_FLOAT;
-                        imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+                        //imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+                        imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+                            VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+                        imageInfo.mipLevels = environmentMipLevels;
                         imageInfo.arrayLayers = 6;
                         imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
                         imageInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
@@ -353,11 +403,71 @@ void VulkanGraphicsSystem::RenderScene(Scene* scene, AssetManager* assetManager,
 
                     if (environmentReady)
                     {
-                        const VkExtent2D environmentExtent{ faceSize, faceSize };
+                        VkSamplerCreateInfo samplerInfo{};
+                        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+                        samplerInfo.magFilter = VK_FILTER_LINEAR;
+                        samplerInfo.minFilter = VK_FILTER_LINEAR;
+                        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+                        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+                        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+                        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+                        samplerInfo.minLod = 0.0f;
+                        //samplerInfo.maxLod = 0.0f;
+                        samplerInfo.maxLod = (float32)(environmentMipLevels - 1);
 
-                        if (!ConvertEnvironmentCubemap(environmentExtent))
+                        if (vkCreateSampler(device.GetDevice(), &samplerInfo, nullptr, &environmentCubemapSampler) != VK_SUCCESS)
                         {
                             environmentReady = false;
+                        }
+                    }
+
+                    if (environmentReady)
+                    {
+                        VulkanImageCreateInfo imageInfo{};
+                        imageInfo.device = &device;
+                        imageInfo.extent = { SPECULAR_ENV_SIZE , SPECULAR_ENV_SIZE };
+                        imageInfo.format = ImageFormat::RGBA16_FLOAT;
+                        imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+                        imageInfo.mipLevels = SPECULAR_ENV_MIP_LEVELS;
+                        imageInfo.arrayLayers = 6;
+                        imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+                        imageInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+
+                        if (!specularEnvironmentCubemap.Create(imageInfo))
+                        {
+                            environmentReady = false;
+                        }
+                    }
+
+                    if (environmentReady)
+                    {
+                        specularEnvironmentViews.resize(SPECULAR_ENV_MIP_LEVELS * 6);
+
+                        for (uint32 mipLevel = 0; mipLevel < SPECULAR_ENV_MIP_LEVELS; ++mipLevel)
+                        {
+                            for (uint32 faceIndex = 0; faceIndex < 6; ++faceIndex)
+                            {
+                                const uint32 viewIndex = mipLevel * 6 + faceIndex;
+
+                                VkImageViewCreateInfo viewInfo{};
+                                viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+                                viewInfo.image = specularEnvironmentCubemap.GetImage();
+                                viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+                                viewInfo.format = specularEnvironmentCubemap.GetFormat();
+                                viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                                viewInfo.subresourceRange.baseMipLevel = mipLevel;
+                                viewInfo.subresourceRange.levelCount = 1;
+                                viewInfo.subresourceRange.baseArrayLayer = faceIndex;
+                                viewInfo.subresourceRange.layerCount = 1;
+
+                                if (vkCreateImageView(device.GetDevice(), &viewInfo, nullptr, &specularEnvironmentViews[viewIndex]) != VK_SUCCESS)
+                                {
+                                    environmentReady = false;
+                                    break;
+                                }
+                            }
+
+                            if (!environmentReady) break;
                         }
                     }
 
@@ -372,9 +482,19 @@ void VulkanGraphicsSystem::RenderScene(Scene* scene, AssetManager* assetManager,
                         samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
                         samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
                         samplerInfo.minLod = 0.0f;
-                        samplerInfo.maxLod = 0.0f;
+                        samplerInfo.maxLod = (float32)(SPECULAR_ENV_MIP_LEVELS - 1);
 
-                        if (vkCreateSampler(device.GetDevice(), &samplerInfo, nullptr, &environmentCubemapSampler) != VK_SUCCESS)
+                        if (vkCreateSampler(device.GetDevice(), &samplerInfo, nullptr, &specularEnvironmentSampler) != VK_SUCCESS)
+                        {
+                            environmentReady = false;
+                        }
+                    }
+
+                    if (environmentReady)
+                    {
+                        const VkExtent2D environmentExtent{ faceSize, faceSize };
+
+                        if (!ConvertEnvironmentCubemap(environmentExtent))
                         {
                             environmentReady = false;
                         }
@@ -383,6 +503,7 @@ void VulkanGraphicsSystem::RenderScene(Scene* scene, AssetManager* assetManager,
                     if (!environmentReady)
                     {
                         DestroyEnvironmentCubemap();
+                        DestroySpecularEnvironment();
 
                         if (environmentTexture) environmentTexture->Destroy();
                         environmentTexture.reset();
@@ -451,8 +572,9 @@ void VulkanGraphicsSystem::RenderScene(Scene* scene, AssetManager* assetManager,
         }
     }
 
-    const VulkanFrameResult frameResult = renderer.DrawFrame(drawItems, sceneData, uiData,
-        environmentCubemap.GetImageView(), environmentCubemapSampler);
+    const VulkanFrameResult frameResult = renderer.DrawFrame(drawItems, sceneData, uiData, environmentCubemap.GetImageView(),
+        environmentCubemapSampler, specularEnvironmentCubemap.GetImageView(), specularEnvironmentSampler,
+        brdfLUT.GetImageView(), brdfLUTSampler);
 
     if (frameResult == VulkanFrameResult::RECREATE)
     {
@@ -614,7 +736,8 @@ void VulkanGraphicsSystem::DestroyEnvironmentCubemap()
 
 bool VulkanGraphicsSystem::ConvertEnvironmentCubemap(VkExtent2D extent)
 {
-    if (!environmentTexture || !environmentCubemap.GetImage()) return false;
+    if (!environmentTexture || !environmentCubemap.GetImage() || !environmentCubemapSampler) return false;
+    if (!specularEnvironmentCubemap.GetImage() || specularEnvironmentViews.size() != SPECULAR_ENV_MIP_LEVELS * 6) return false;
     if (extent.width == 0 || extent.height == 0) return false;
 
     const VkDevice buffDevice = device.GetDevice();
@@ -648,6 +771,98 @@ bool VulkanGraphicsSystem::ConvertEnvironmentCubemap(VkExtent2D extent)
     renderInfo.extent = extent;
 
     equirectPass.Record(renderInfo);
+
+    uint32 environmentMipLevels = 1;
+
+    for (uint32 size = extent.width; size > 1; size >>= 1)
+    {
+        ++environmentMipLevels;
+    }
+
+    int32 mipSize = (int32)extent.width;
+
+    for (uint32 mipLevel = 1; mipLevel < environmentMipLevels; ++mipLevel)
+    {
+        VkImageMemoryBarrier2 mipBarriers[2]{};
+
+        mipBarriers[0] = VulkanInitializers::ImageMemoryBarrier(
+            environmentCubemap.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+            VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT,
+            mipLevel - 1, 1, 0, 6
+        );
+
+        mipBarriers[1] = VulkanInitializers::ImageMemoryBarrier(
+            environmentCubemap.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT,
+            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE,
+            VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            mipLevel, 1, 0, 6
+        );
+
+        VkDependencyInfo mipDependency{};
+        mipDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        mipDependency.imageMemoryBarrierCount = 2;
+        mipDependency.pImageMemoryBarriers = mipBarriers;
+
+        vkCmdPipelineBarrier2(cmdBuffer, &mipDependency);
+
+        const int32 nextMipSize = mipSize > 1 ? mipSize / 2 : 1;
+
+        VkImageBlit blit{};
+        blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blit.srcSubresource.mipLevel = mipLevel - 1;
+        blit.srcSubresource.baseArrayLayer = 0;
+        blit.srcSubresource.layerCount = 6;
+        blit.srcOffsets[0] = { 0, 0, 0 };
+        blit.srcOffsets[1] = { mipSize, mipSize, 1 };
+
+        blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blit.dstSubresource.mipLevel = mipLevel;
+        blit.dstSubresource.baseArrayLayer = 0;
+        blit.dstSubresource.layerCount = 6;
+        blit.dstOffsets[0] = { 0, 0, 0 };
+        blit.dstOffsets[1] = { nextMipSize, nextMipSize, 1 };
+
+        vkCmdBlitImage(
+            cmdBuffer,
+            environmentCubemap.GetImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            environmentCubemap.GetImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            1, &blit, VK_FILTER_LINEAR
+        );
+
+        mipBarriers[0] = VulkanInitializers::ImageMemoryBarrier(
+            environmentCubemap.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT,
+            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+            mipLevel - 1, 1, 0, 6
+        );
+
+        mipBarriers[1] = VulkanInitializers::ImageMemoryBarrier(
+            environmentCubemap.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+            mipLevel, 1, 0, 6
+        );
+
+        vkCmdPipelineBarrier2(cmdBuffer, &mipDependency);
+
+        mipSize = nextMipSize;
+    }
+
+    VulkanSpecularEnvPassRenderInfo specularInfo{};
+    specularInfo.cmdBuffer = cmdBuffer;
+    specularInfo.sourceView = environmentCubemap.GetImageView();
+    specularInfo.sourceSampler = environmentCubemapSampler;
+    specularInfo.targetImage = specularEnvironmentCubemap.GetImage();
+    specularInfo.targetViews = std::span<const VkImageView>(specularEnvironmentViews);
+    specularInfo.extent = { SPECULAR_ENV_SIZE, SPECULAR_ENV_SIZE };
+    specularInfo.mipLevels = SPECULAR_ENV_MIP_LEVELS;
+
+    specularEnvPass.Record(specularInfo);
 
     if (vkEndCommandBuffer(cmdBuffer) != VK_SUCCESS)
     {
@@ -683,5 +898,144 @@ bool VulkanGraphicsSystem::ConvertEnvironmentCubemap(VkExtent2D extent)
     commandPool.Destroy();
 
     return true;
+}
+
+void VulkanGraphicsSystem::DestroySpecularEnvironment()
+{
+    const VkDevice buffDevice = device.GetDevice();
+
+    if (buffDevice)
+    {
+        if (specularEnvironmentSampler) vkDestroySampler(buffDevice, specularEnvironmentSampler, nullptr);
+        specularEnvironmentSampler = VK_NULL_HANDLE;
+
+        for (VkImageView& view : specularEnvironmentViews)
+        {
+            if (view) vkDestroyImageView(buffDevice, view, nullptr);
+        }
+    }
+
+    specularEnvironmentViews.clear();
+    specularEnvironmentCubemap.Destroy();
+}
+
+bool VulkanGraphicsSystem::GenerateBRDFLUT()
+{
+    const VkDevice buffDevice = device.GetDevice();
+    if (!buffDevice) return false;
+
+    DestroyBRDFLUT();
+
+    VulkanImageCreateInfo imageInfo{};
+    imageInfo.device = &device;
+    imageInfo.extent = { BRDF_LUT_SIZE, BRDF_LUT_SIZE };
+    imageInfo.format = ImageFormat::RGBA16_FLOAT;
+    imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+    if (!brdfLUT.Create(imageInfo))
+    {
+        DestroyBRDFLUT();
+        return false;
+    }
+
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = 0.0f;
+
+    if (vkCreateSampler(buffDevice, &samplerInfo, nullptr, &brdfLUTSampler) != VK_SUCCESS)
+    {
+        DestroyBRDFLUT();
+        return false;
+    }
+
+    VulkanCommandPool commandPool;
+
+    if (!commandPool.Create(buffDevice, device.GetGraphicsQueueFamily()))
+    {
+        DestroyBRDFLUT();
+        return false;
+    }
+
+    const VkCommandBuffer cmdBuffer = commandPool.AllocateCommandBuffer();
+
+    if (!cmdBuffer)
+    {
+        commandPool.Destroy();
+        DestroyBRDFLUT();
+        return false;
+    }
+
+    const VkCommandBufferBeginInfo beginInfo = VulkanInitializers::CommandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+
+    if (vkBeginCommandBuffer(cmdBuffer, &beginInfo) != VK_SUCCESS)
+    {
+        commandPool.Destroy();
+        DestroyBRDFLUT();
+        return false;
+    }
+
+    VulkanBRDFLUTPassRenderInfo renderInfo{};
+    renderInfo.cmdBuffer = cmdBuffer;
+    renderInfo.targetImage = brdfLUT.GetImage();
+    renderInfo.targetView = brdfLUT.GetImageView();
+    renderInfo.extent = { BRDF_LUT_SIZE, BRDF_LUT_SIZE };
+
+    brdfLUTPass.Record(renderInfo);
+
+    if (vkEndCommandBuffer(cmdBuffer) != VK_SUCCESS)
+    {
+        commandPool.Destroy();
+        DestroyBRDFLUT();
+        return false;
+    }
+
+    VkCommandBufferSubmitInfo cmdBufferInfo{};
+    cmdBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+    cmdBufferInfo.commandBuffer = cmdBuffer;
+
+    VkSubmitInfo2 submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+    submitInfo.commandBufferInfoCount = 1;
+    submitInfo.pCommandBufferInfos = &cmdBufferInfo;
+
+    const VkQueue graphicsQueue = device.GetGraphicsQueue();
+
+    if (vkQueueSubmit2(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS)
+    {
+        commandPool.Destroy();
+        DestroyBRDFLUT();
+        return false;
+    }
+
+    if (vkQueueWaitIdle(graphicsQueue) != VK_SUCCESS)
+    {
+        commandPool.Destroy();
+        DestroyBRDFLUT();
+        return false;
+    }
+
+    commandPool.Destroy();
+
+    return true;
+}
+
+void VulkanGraphicsSystem::DestroyBRDFLUT()
+{
+    const VkDevice buffDevice = device.GetDevice();
+
+    if (buffDevice && brdfLUTSampler)
+    {
+        vkDestroySampler(buffDevice, brdfLUTSampler, nullptr);
+    }
+
+    brdfLUTSampler = VK_NULL_HANDLE;
+    brdfLUT.Destroy();
 }
 #endif
