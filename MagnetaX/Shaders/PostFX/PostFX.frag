@@ -17,6 +17,26 @@ float Luma(vec3 color)
     return dot(color, vec3(0.299, 0.587, 0.114));
 }
 
+vec3 ToneMapACES(vec3 color)
+{
+    const float a = 2.51;
+    const float b = 0.03;
+    const float c = 2.43;
+    const float d = 0.59;
+    const float e = 0.14;
+
+    return clamp((color * (a * color + b)) / (color * (c * color + d) + e), 0.0, 1.0);
+}
+
+vec3 ProcessColor(vec3 color)
+{
+    const float exposureEV = -3.0;
+
+    color *= exp2(exposureEV);
+
+    return ToneMapACES(color);
+}
+
 void main()
 {
     const float edgeThresholdMin = 0.03;
@@ -26,18 +46,19 @@ void main()
 
     vec2 texelSize = 1.0 / vec2(textureSize(sceneColor, 0));
 
-    vec3 colorCenter = texture(sceneColor, fragUV).rgb;
+    //vec3 colorCenter = texture(sceneColor, fragUV).rgb;
+    vec3 colorCenter = ProcessColor(texture(sceneColor, fragUV).rgb);
 
     float lumaCenter = Luma(colorCenter);
-    float lumaNorth = Luma(texture(sceneColor, fragUV + vec2(0.0, -texelSize.y)).rgb);
-    float lumaSouth = Luma(texture(sceneColor, fragUV + vec2(0.0, texelSize.y)).rgb);
-    float lumaWest = Luma(texture(sceneColor, fragUV + vec2(-texelSize.x, 0.0)).rgb);
-    float lumaEast = Luma(texture(sceneColor, fragUV + vec2(texelSize.x, 0.0)).rgb);
+    float lumaNorth = Luma(ProcessColor(texture(sceneColor, fragUV + vec2(0.0, -texelSize.y)).rgb));
+    float lumaSouth = Luma(ProcessColor(texture(sceneColor, fragUV + vec2(0.0, texelSize.y)).rgb));
+    float lumaWest = Luma(ProcessColor(texture(sceneColor, fragUV + vec2(-texelSize.x, 0.0)).rgb));
+    float lumaEast = Luma(ProcessColor(texture(sceneColor, fragUV + vec2(texelSize.x, 0.0)).rgb));
 
-    float lumaNorthWest = Luma(texture(sceneColor, fragUV + vec2(-texelSize.x, -texelSize.y)).rgb);
-    float lumaNorthEast = Luma(texture(sceneColor, fragUV + vec2(texelSize.x, -texelSize.y)).rgb);
-    float lumaSouthWest = Luma(texture(sceneColor, fragUV + vec2(-texelSize.x, texelSize.y)).rgb);
-    float lumaSouthEast = Luma(texture(sceneColor, fragUV + vec2(texelSize.x, texelSize.y)).rgb);
+    float lumaNorthWest = Luma(ProcessColor(texture(sceneColor, fragUV + vec2(-texelSize.x, -texelSize.y)).rgb));
+    float lumaNorthEast = Luma(ProcessColor(texture(sceneColor, fragUV + vec2(texelSize.x, -texelSize.y)).rgb));
+    float lumaSouthWest = Luma(ProcessColor(texture(sceneColor, fragUV + vec2(-texelSize.x, texelSize.y)).rgb));
+    float lumaSouthEast = Luma(ProcessColor(texture(sceneColor, fragUV + vec2(texelSize.x, texelSize.y)).rgb));
 
     float lumaMin = min(lumaCenter, min(min(lumaNorth, lumaSouth), min(lumaWest, lumaEast)));
     float lumaMax = max(lumaCenter, max(max(lumaNorth, lumaSouth), max(lumaWest, lumaEast)));
@@ -97,8 +118,8 @@ void main()
     vec2 uv1 = currentUV - edgeStep;
     vec2 uv2 = currentUV + edgeStep;
 
-    float lumaEnd1 = Luma(texture(sceneColor, uv1).rgb) - lumaLocalAverage;
-    float lumaEnd2 = Luma(texture(sceneColor, uv2).rgb) - lumaLocalAverage;
+    float lumaEnd1 = Luma(ProcessColor(texture(sceneColor, uv1).rgb)) - lumaLocalAverage;
+    float lumaEnd2 = Luma(ProcessColor(texture(sceneColor, uv2).rgb)) - lumaLocalAverage;
 
     bool reachedEnd1 = abs(lumaEnd1) >= gradientThreshold;
     bool reachedEnd2 = abs(lumaEnd2) >= gradientThreshold;
@@ -108,14 +129,14 @@ void main()
         if (!reachedEnd1)
         {
             uv1 -= edgeStep;
-            lumaEnd1 = Luma(texture(sceneColor, uv1).rgb) - lumaLocalAverage;
+            lumaEnd1 = Luma(ProcessColor(texture(sceneColor, uv1).rgb)) - lumaLocalAverage;
             reachedEnd1 = abs(lumaEnd1) >= gradientThreshold;
         }
 
         if (!reachedEnd2)
         {
             uv2 += edgeStep;
-            lumaEnd2 = Luma(texture(sceneColor, uv2).rgb) - lumaLocalAverage;
+            lumaEnd2 = Luma(ProcessColor(texture(sceneColor, uv2).rgb)) - lumaLocalAverage;
             reachedEnd2 = abs(lumaEnd2) >= gradientThreshold;
         }
     }
@@ -160,7 +181,7 @@ void main()
         finalUV.x += finalOffset * stepLength;
     }
 
-    vec3 finalColor = texture(sceneColor, finalUV).rgb;
+    vec3 finalColor = ProcessColor(texture(sceneColor, finalUV).rgb);
 
     outColor = vec4(finalColor, 1.0);
 }
