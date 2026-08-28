@@ -19,7 +19,7 @@ TestGame::~TestGame() = default;
 
 void TestGame::OnCreate(GameCreateInfo& createInfo)
 {
-    createInfo.window.title = "MagnetaX TestGame";
+    createInfo.window.title = "MagnetaX TestGame FPS: ?";
     createInfo.window.size = Size2i(1280, 720);
 }
 
@@ -46,6 +46,10 @@ void TestGame::OnInit()
 
     AssetHandle<MeshAsset> meshCube = GetAssetManager().CreateAsset<MeshAsset>(AssetSource((assetsPath / "Models/cube.obj").string()));
     AssetHandle<MeshAsset> meshSphere = GetAssetManager().CreateAsset<MeshAsset>(AssetSource((assetsPath / "Models/sphere.obj").string()), true);
+
+    AssetHandle<TextureAsset> hdri = GetAssetManager().CreateAsset<TextureAsset>(AssetSource((assetsPath / "HDRI/qwantani_moonrise_puresky_4k.hdr").string()), ImageFormat::RGBA32_FLOAT);
+
+    env.environmentMap = hdri;
 
     auto createMaterial = 
         [&](const Vector4f& color, float32 roughness, float32 metallic, AssetHandle<TextureAsset> texture = {}, float32 scale = 1.0f)
@@ -129,6 +133,22 @@ void TestGame::OnInit()
 
 void TestGame::OnUpdate(float64 deltaTime)
 {
+    fpsTimer += deltaTime;
+    ++fpsFrameCount;
+
+    if (fpsTimer >= 0.5)
+    {
+        const float64 fps = fpsFrameCount / fpsTimer;
+
+        std::ostringstream title;
+        title << "MagnetaX TestGame FPS: " << std::fixed << std::setprecision(0) << fps;
+
+        GetWindow().SetTitle(title.str());
+
+        fpsTimer = 0.0;
+        fpsFrameCount = 0;
+    }
+
     const Input::Keyboard keyboard = GetInput().GetKeyboard();
 
     if (keyboard.KeyPressed(KeyboardKeys::ESCAPE)) RequestExit();

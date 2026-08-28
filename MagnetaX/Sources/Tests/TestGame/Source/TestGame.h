@@ -14,6 +14,9 @@ public:
 private:
     Scene scene1{};
 
+    float64 fpsTimer = 0.0;
+    uint32 fpsFrameCount = 0;
+
     void OnCreate(GameCreateInfo& createInfo) override;
     void OnInit() override;
     void OnUpdate(float64 deltaTime) override;
