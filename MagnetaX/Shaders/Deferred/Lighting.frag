@@ -113,7 +113,6 @@ vec3 CalculateEnvironmentSpecular(vec3 albedo, vec3 normal, vec3 viewDirection, 
 
     vec3 specular = prefilteredColor * (fresnel * brdf.x + brdf.y);
 
-    //return prefilteredColor * (fresnel * brdf.x + brdf.y);
     return specular * ambientOcclusion;
 }
 

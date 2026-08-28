@@ -14,6 +14,7 @@
 #include "PostFX/VulkanPostFXPass.h"
 #include "Shadow/VulkanShadowDepthPass.h"
 #include "UI/VulkanUIPass.h"
+#include "Environment/VulkanEnvironmentRenderData.h"
 #include "Environment/VulkanSkyPass.h"
 #include <span>
 #include <vector>
@@ -39,6 +40,16 @@ struct VulkanRendererCreateInfo
     RendererConfig config{};
 };
 
+struct VulkanRendererFrameInfo
+{
+    std::span<const VulkanDrawItem> drawItems;
+
+    const RenderSceneData* sceneData = nullptr;
+    const UIRenderData* uiData = nullptr;
+
+    VulkanEnvironmentRenderData environment{};
+};
+
 class VulkanRenderer
 {
 public:
@@ -49,10 +60,7 @@ public:
     bool Create(const VulkanRendererCreateInfo& createInfo);
     void Destroy();
 
-    // Make VulkanRendererFrameInfo?
-    VulkanFrameResult DrawFrame(std::span<const VulkanDrawItem> drawItems, const RenderSceneData& sceneData, const UIRenderData& uiData,
-        VkImageView environmentView, VkSampler environmentSampler, VkImageView specularEnvView, VkSampler specularEnvSampler,
-        VkImageView brdfLUTView, VkSampler brdfLUTSampler);
+    VulkanFrameResult DrawFrame(const VulkanRendererFrameInfo& frameInfo);
 
     void SetDebugView(GraphicsDebugView view) { debugView = view; }
 

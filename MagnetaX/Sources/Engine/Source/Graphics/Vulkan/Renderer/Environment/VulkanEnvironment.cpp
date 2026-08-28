@@ -188,7 +188,7 @@ bool VulkanEnvironment::SetSource(const VulkanEnvironmentSourceInfo& sourceInfo)
     if (!device || !device->GetDevice()) return false;
     if (!sourceInfo.pixels || sourceInfo.width == 0 || sourceInfo.height == 0) return false;
     if (sourceInfo.format != ImageFormat::RGBA32_FLOAT) return false;
-    if ((sourceInfo.width & 1u) != 0 || sourceInfo.width / 2 != sourceInfo.height) return false;
+    if (sourceInfo.width != sourceInfo.height * 2 || sourceInfo.width % 4 != 0) return false;
 
     const uint32 faceSize = sourceInfo.width / 4;
     if (faceSize == 0) return false;
@@ -440,7 +440,12 @@ bool VulkanEnvironment::SetSource(const VulkanEnvironmentSourceInfo& sourceInfo)
 
 void VulkanEnvironment::ClearSource()
 {
-    if (device && device->GetDevice()) vkDeviceWaitIdle(device->GetDevice());
+    if (!environmentCubemap.GetImage() && !specularCubemap.GetImage() && !environmentSampler && !specularSampler) return;
+
+    if (device && device->GetDevice())
+    {
+        vkDeviceWaitIdle(device->GetDevice());
+    }
 
     DestroyEnvironmentResources();
 }

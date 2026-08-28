@@ -244,12 +244,16 @@ void VulkanRenderer::Destroy()
     device = nullptr;
 }
 
-VulkanFrameResult VulkanRenderer::DrawFrame(std::span<const VulkanDrawItem> drawItems, const RenderSceneData& sceneData,
-    const UIRenderData& uiData, VkImageView environmentView, VkSampler environmentSampler, VkImageView specularEnvView, VkSampler specularEnvSampler,
-    VkImageView brdfLUTView, VkSampler brdfLUTSampler)
+VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frameInfo)
 {
     if (!device || !presentContext || !cmdBuffer) return VulkanFrameResult::FAILED;
     if (!imageAvailable || !inFlight) return VulkanFrameResult::FAILED;
+    if (!frameInfo.sceneData || !frameInfo.uiData) return VulkanFrameResult::FAILED;
+
+    const RenderSceneData& sceneData = *frameInfo.sceneData;
+    const UIRenderData& uiData = *frameInfo.uiData;
+    const std::span<const VulkanDrawItem> drawItems = frameInfo.drawItems;
+    const VulkanEnvironmentRenderData& env = frameInfo.environment;
 
     const VkDevice buffDevice = device->GetDevice();
     if (!buffDevice) return VulkanFrameResult::FAILED;
@@ -360,14 +364,14 @@ VulkanFrameResult VulkanRenderer::DrawFrame(std::span<const VulkanDrawItem> draw
         lightingInfo.extent = extent;
         lightingInfo.sceneData = &sceneData;
         lightingInfo.shadowData = &shadowData;
-        lightingInfo.specularEnvView = specularEnvView;
-        lightingInfo.specularEnvSampler = specularEnvSampler;
-        lightingInfo.brdfLUTView = brdfLUTView;
-        lightingInfo.brdfLUTSampler = brdfLUTSampler;
+        lightingInfo.specularEnvView = env.specularView;
+        lightingInfo.specularEnvSampler = env.specularSampler;
+        lightingInfo.brdfLUTView = env.brdfLUTView;
+        lightingInfo.brdfLUTSampler = env.brdfLUTSampler;
 
         lightingPass.Record(lightingInfo);
 
-        const bool hasEnvironment = environmentView && environmentSampler;
+        const bool hasEnvironment = env.environmentView && env.environmentSampler;
 
         if (hasEnvironment)
         {
@@ -386,8 +390,8 @@ VulkanFrameResult VulkanRenderer::DrawFrame(std::span<const VulkanDrawItem> draw
             skyInfo.cmdBuffer = cmdBuffer;
             skyInfo.targetView = sceneColor.GetImageView();
             skyInfo.extent = extent;
-            skyInfo.environmentView = environmentView;
-            skyInfo.environmentSampler = environmentSampler;
+            skyInfo.environmentView = env.environmentView;
+            skyInfo.environmentSampler = env.environmentSampler;
             skyInfo.sceneData = &sceneData;
 
             skyPass.Record(skyInfo);
@@ -410,6 +414,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(std::span<const VulkanDrawItem> draw
         postFXInfo.cmdBuffer = cmdBuffer;
         postFXInfo.targetView = targetImage.GetImageView();
         postFXInfo.extent = extent;
+        postFXInfo.exposureEV = sceneData.exposureEV;
 
         postFXPass.Record(postFXInfo);
     }

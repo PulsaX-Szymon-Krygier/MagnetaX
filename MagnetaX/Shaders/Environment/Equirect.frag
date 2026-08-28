@@ -13,6 +13,8 @@ layout(push_constant) uniform PushConstants
 
 layout(location = 0) out vec4 outColor;
 
+const float MAX_FLOAT16 = 65504.0;
+
 vec3 GetDir(uint faceIndex, vec2 uv)
 {
     vec2 pos = uv * 2.0 - 1.0;
@@ -56,10 +58,8 @@ void main()
     vec3 direction = GetDir(pc.faceIndex, fragUV);
     vec2 uv = GetEquirectUV(direction);
 
-    //outColor = texture(equirectMap, uv);
-
     vec4 color = texture(equirectMap, uv);
-    color.rgb = min(color.rgb, vec3(65504.0));
+    color.rgb = min(color.rgb, vec3(MAX_FLOAT16));
 
     outColor = color;
 }

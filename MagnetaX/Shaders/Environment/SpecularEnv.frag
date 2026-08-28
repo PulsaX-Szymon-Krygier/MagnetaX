@@ -87,6 +87,10 @@ void main()
     vec3 color = vec3(0.0);
     float weight = 0.0;
 
+    float resolution = float(textureSize(environmentMap, 0).x);
+    float texelSolidAngle = 4.0 * PI / (6.0 * resolution * resolution);
+    float maxMipLevel = float(textureQueryLevels(environmentMap) - 1);
+
     for (uint i = 0; i < SAMPLE_COUNT; ++i)
     {
         vec2 xi = Hammersley(i, SAMPLE_COUNT);
@@ -94,12 +98,6 @@ void main()
         vec3 lightDirection = normalize(2.0 * dot(viewDirection, halfDirection) * halfDirection - viewDirection);
 
         float nDotL = max(dot(normal, lightDirection), 0.0);
-
-        //if (nDotL > 0.0)
-        //{
-        //    color += textureLod(environmentMap, lightDirection, 0.0).rgb * nDotL;
-        //    weight += nDotL;
-        //}
 
         if (nDotL > 0.0)
         {
@@ -109,9 +107,6 @@ void main()
             float distribution = DistributionGGX(normal, halfDirection, pc.roughness);
             float pdf = max((distribution * nDotH) / max(4.0 * hDotV, 0.0001), 0.0001);
 
-            float resolution = float(textureSize(environmentMap, 0).x);
-
-            float texelSolidAngle = 4.0 * PI / (6.0 * resolution * resolution);
             float sampleSolidAngle = 1.0 / (float(SAMPLE_COUNT) * pdf);
 
             float mipLevel = 0.0;
@@ -121,7 +116,6 @@ void main()
                 mipLevel = 0.5 * log2(sampleSolidAngle / texelSolidAngle);
             }
 
-            float maxMipLevel = float(textureQueryLevels(environmentMap) - 1);
             mipLevel = clamp(mipLevel, 0.0, maxMipLevel);
 
             color += textureLod(environmentMap, lightDirection, mipLevel).rgb * nDotL;

@@ -2,22 +2,19 @@
 // SPDX-License-Identifier: MPL-2.0
 #pragma once
 
+#include <MX/Assets/AssetHandle.h>
 #include <MX/Graphics/AbstractGraphicsSystem.h>
-#include <MX/Graphics/Resources/ImageFormat.h>
 #include <Graphics/Vulkan/Present/VulkanSurface.h>
-#include <Graphics/Vulkan/Renderer/Environment/VulkanEquirectPass.h>
-#include <Graphics/Vulkan/Renderer/Environment/VulkanSpecularEnvPass.h>
-#include <Graphics/Vulkan/Renderer/Environment/VulkanBRDFLUTPass.h>
+#include <Graphics/Vulkan/Renderer/Environment/VulkanEnvironment.h>
+#include <MX/Assets/Texture/TextureAsset.h>
 #include "VulkanDevice.h"
 #include "VulkanInstance.h"
 #include "VulkanRenderContext.h"
 #include <memory>
 #include <unordered_map>
-#include <array>
 
 class MaterialAsset;
 class MeshAsset;
-class TextureAsset;
 class VulkanMaterial;
 class VulkanMesh;
 class VulkanTexture;
@@ -60,32 +57,12 @@ private:
 
     GraphicsDebugView debugView = GraphicsDebugView::FINAL;
 
+    VulkanEnvironment environment;
+    uint64 environmentMapAssetID = 0;
+
+    void UpdateEnvironment(AssetHandle<TextureAsset> environmentMap, AssetManager* assetManager);
+
     VulkanTexture* GetOrCreateTexture(uint64 assetID, TextureAsset* textureAsset);
     VulkanMaterial* GetOrCreateMaterial(uint64 assetID, MaterialAsset* materialAsset, AssetManager* assetManager);
     VulkanMesh* GetOrCreateMesh(uint64 assetID, MeshAsset* meshAsset);
-
-    // Temporary place for those members, later I will move them to proper place
-    // Maybe VulkanEnvironment class or context??
-    uint64 environmentMapAssetID = 0;
-    std::unique_ptr<VulkanTexture> environmentTexture;
-    VulkanImage environmentCubemap;
-    std::array<VkImageView, 6> environmentCubemapFaceViews{};
-    VulkanEquirectPass equirectPass;
-    VkSampler environmentCubemapSampler = VK_NULL_HANDLE;
-    
-    VulkanImage specularEnvironmentCubemap;
-    std::vector<VkImageView> specularEnvironmentViews;
-    VkSampler specularEnvironmentSampler = VK_NULL_HANDLE;
-    VulkanSpecularEnvPass specularEnvPass;
-
-    VulkanImage brdfLUT;
-    VkSampler brdfLUTSampler = VK_NULL_HANDLE;
-    VulkanBRDFLUTPass brdfLUTPass;
-
-    void DestroyEnvironmentCubemap();
-    bool ConvertEnvironmentCubemap(VkExtent2D extent);
-    void DestroySpecularEnvironment();
-    bool GenerateBRDFLUT();
-    void DestroyBRDFLUT();
-    // ----------------------------
 };

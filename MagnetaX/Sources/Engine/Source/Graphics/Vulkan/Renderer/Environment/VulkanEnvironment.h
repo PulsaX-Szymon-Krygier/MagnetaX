@@ -3,6 +3,7 @@
 #pragma once
 
 #include <Graphics/Vulkan/Resources/VulkanImage.h>
+#include "VulkanEnvironmentRenderData.h"
 #include "VulkanBRDFLUTPass.h"
 #include "VulkanEquirectPass.h"
 #include "VulkanSpecularEnvPass.h"
@@ -13,18 +14,6 @@ struct VulkanEnvironmentSourceInfo
     uint32 width = 0;
     uint32 height = 0;
     ImageFormat format = ImageFormat::UNKNOWN;
-};
-
-struct VulkanEnvironmentRenderData
-{
-    VkImageView environmentView = VK_NULL_HANDLE;
-    VkSampler environmentSampler = VK_NULL_HANDLE;
-
-    VkImageView specularView = VK_NULL_HANDLE;
-    VkSampler specularSampler = VK_NULL_HANDLE;
-
-    VkImageView brdfLUTView = VK_NULL_HANDLE;
-    VkSampler brdfLUTSampler = VK_NULL_HANDLE;
 };
 
 struct VulkanEnvironmentCreateInfo

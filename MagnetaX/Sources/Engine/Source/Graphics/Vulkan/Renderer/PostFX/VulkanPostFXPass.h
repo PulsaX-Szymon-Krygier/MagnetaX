@@ -15,6 +15,7 @@ struct VulkanPostFXPassRenderInfo : VulkanPassRenderInfo
 {
     VkImageView targetView = VK_NULL_HANDLE;
     VkExtent2D extent{};
+    float32 exposureEV = 0.0f;
 };
 
 class VulkanPostFXPass

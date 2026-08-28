@@ -8,6 +8,11 @@ layout(set = 0, binding = 0) uniform sampler2D sceneColor;
 
 layout(location = 0) out vec4 outColor;
 
+layout(push_constant) uniform PushConstants
+{
+    float exposureEV;
+} pc;
+
 // ITU-R BT.601 standard (Luma formula)
 // Red (Kr) = 0.299
 // Green (Kg) = 0.587
@@ -30,9 +35,7 @@ vec3 ToneMapACES(vec3 color)
 
 vec3 ProcessColor(vec3 color)
 {
-    const float exposureEV = -3.0;
-
-    color *= exp2(exposureEV);
+    color *= exp2(pc.exposureEV);
 
     return ToneMapACES(color);
 }
@@ -46,7 +49,6 @@ void main()
 
     vec2 texelSize = 1.0 / vec2(textureSize(sceneColor, 0));
 
-    //vec3 colorCenter = texture(sceneColor, fragUV).rgb;
     vec3 colorCenter = ProcessColor(texture(sceneColor, fragUV).rgb);
 
     float lumaCenter = Luma(colorCenter);

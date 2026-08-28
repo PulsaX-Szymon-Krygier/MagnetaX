@@ -10,6 +10,7 @@ struct CameraComponent
     float32 fieldOfView = 60.0f;
     float32 nearPlane = 0.1f;
     float32 farPlane = 1000.0f;
+    float32 exposureEV = 0.0f;
 
     Matrix4f GetProjectionMatrix(float32 aspectRatio) const
     {

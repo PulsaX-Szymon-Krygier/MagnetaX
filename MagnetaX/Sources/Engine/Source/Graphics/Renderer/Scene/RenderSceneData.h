@@ -24,6 +24,7 @@ struct RenderSceneData
     Vector3f cameraPosition{ 0.0f };
     float32 cameraNearPlane = 0.1f;
     float32 cameraFarPlane = 1000.0f;
+    float32 exposureEV = 0.0f;
 
     std::vector<RenderLight> lights;
     std::vector<RenderObject> objects;
