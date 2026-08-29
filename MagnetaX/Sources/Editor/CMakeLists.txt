@@ -26,6 +26,7 @@ target_sources(MXEditor
 target_include_directories(MXEditor
   PRIVATE
     ${MXB_DIR_EDITOR_SOURCE}
+    "${MXB_DIR_SOURCES}/Engine/Include/Internal"
 )
 
 # Add dependencies
