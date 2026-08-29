@@ -21,6 +21,7 @@ struct RenderSceneData
     Matrix4f view = Matrix4f::Identity();
     Matrix4f viewProjectionInversed = Matrix4f::Identity();
 
+    bool hasCamera = false;
     Vector3f cameraPosition{ 0.0f };
     float32 cameraNearPlane = 0.1f;
     float32 cameraFarPlane = 1000.0f;

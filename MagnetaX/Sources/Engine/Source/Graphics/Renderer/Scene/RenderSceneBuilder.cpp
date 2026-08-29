@@ -61,6 +61,7 @@ RenderSceneData BuildRenderSceneData(Scene* scene, const Size2i& renderSize)
 
     sceneData.view = viewMatrix;
     sceneData.viewProjectionInversed = viewProjMatrix.Inversed();
+    sceneData.hasCamera = true;
     sceneData.cameraPosition = Vector3f(cameraWorldMatrix.m03, cameraWorldMatrix.m13, cameraWorldMatrix.m23);
     sceneData.cameraNearPlane = cameraComponent->nearPlane;
     sceneData.cameraFarPlane = cameraComponent->farPlane;

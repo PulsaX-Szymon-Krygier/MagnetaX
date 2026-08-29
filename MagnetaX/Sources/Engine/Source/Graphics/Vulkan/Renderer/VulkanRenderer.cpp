@@ -371,7 +371,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
 
         lightingPass.Record(lightingInfo);
 
-        const bool hasEnvironment = env.environmentView && env.environmentSampler;
+        const bool hasEnvironment = env.environmentView && env.environmentSampler && sceneData.hasCamera;
 
         if (hasEnvironment)
         {
