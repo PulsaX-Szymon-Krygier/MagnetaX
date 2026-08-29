@@ -1,6 +1,6 @@
 # MagnetaX Engine Conventions
 
-**Last updated:** 26.08.2026
+**Last updated:** 29.08.2026
 
 This document describes the main technical conventions used by the engine.
 
@@ -460,17 +460,43 @@ ambient occlusion = 0 .. 1
 
 The lighting shader may clamp values such as roughness internally where needed for BRDF stability.
 
-## HDR and presentation
+## HDR and exposure
 
-Scene lighting is rendered into:
+Lighting is performed in linear HDR space.
+
+The main scene color target uses:
 
 ```text
 RGBA16_FLOAT
 ```
 
-so internal scene color is HDR-capable and linear.
+so scene lighting, direct lighting, environment lighting, and other HDR contributions can preserve values outside the displayable LDR range.
 
-Exposure and tone mapping are planned as the next HDR presentation step.
+Exposure and tone mapping are applied during post-processing before presentation.
+
+Exposure is view/camera state, not `SceneEnvironment` state.
+
+`CameraComponent::exposureEV` defines manual exposure in exposure stops:
+
+```text
+ 0 EV = x1
++1 EV = x2
+-1 EV = x0.5
+```
+
+The exposure multiplier is therefore:
+
+```text
+2 ^ exposureEV
+```
+
+The default value is:
+
+```text
+0 EV
+```
+
+which represents neutral exposure without additional brightening or darkening.
 
 The Vulkan swapchain prefers:
 
@@ -481,7 +507,7 @@ SRGB_NONLINEAR
 
 when that surface format is available and falls back to another supported format when necessary.
 
-Once exposure and tone mapping are added, this section should also define the final HDR-to-display transform.
+When an sRGB presentation target is used, it performs the final linear-to-sRGB encoding.
 
 ## Lights
 
