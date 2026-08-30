@@ -254,6 +254,7 @@ void CocoaWindow::PollEvents()
     const Size2i previousSize = config.size;
     const WindowState previousState = config.state;
     const bool previousFocus = _impl->focused;
+    const Size2i previousSurfaceSize = GetSurfaceSize();
 
     @autoreleasepool
     {
@@ -287,7 +288,9 @@ void CocoaWindow::PollEvents()
 
     UpdateMetalLayer(_impl->window, _impl->view, _impl->metalLayer);
 
-    if (newState != WindowState::MINIMIZED && newSize != previousSize) DispatchEvent(WindowEventType::RESIZED);
+    const Size2i newSurfaceSize = GetSurfaceSize();
+
+    if (newState != WindowState::MINIMIZED && (newSize != previousSize || newSurfaceSize != previousSurfaceSize)) DispatchEvent(WindowEventType::RESIZED);
 
     if (newState != previousState)
     {
@@ -314,6 +317,15 @@ NativeWindowHandle CocoaWindow::GetNativeHandle() const
     nativeHandle.window = (__bridge void*)_impl->view;
 
     return nativeHandle;
+}
+
+Size2i CocoaWindow::GetSurfaceSize() const
+{
+    if (!_impl || !_impl->metalLayer) return GetSize();
+
+    const CGSize drawableSize = _impl->metalLayer.drawableSize;
+
+    return Size2i(static_cast<int32>(std::lround(drawableSize.width)), static_cast<int32>(std::lround(drawableSize.height)));
 }
 
 void CocoaWindow::DispatchEvent(WindowEventType type)

@@ -33,6 +33,7 @@ public:
 
     /* SurfaceHost */
     NativeWindowHandle GetNativeHandle() const override;
+    Size2i GetSurfaceSize() const override;
 
 private:
     struct CocoaWindowImpl;
