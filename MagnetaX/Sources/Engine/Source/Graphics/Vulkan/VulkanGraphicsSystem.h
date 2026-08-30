@@ -4,9 +4,10 @@
 
 #include <MX/Assets/AssetHandle.h>
 #include <MX/Graphics/AbstractGraphicsSystem.h>
+#include <MX/Assets/Texture/TextureAsset.h>
 #include <Graphics/Vulkan/Present/VulkanSurface.h>
 #include <Graphics/Vulkan/Renderer/Environment/VulkanEnvironment.h>
-#include <MX/Assets/Texture/TextureAsset.h>
+#include <Graphics/Vulkan/Renderer/UI/VulkanUIRenderer.h>
 #include "VulkanDevice.h"
 #include "VulkanInstance.h"
 #include "VulkanRenderContext.h"
@@ -36,6 +37,8 @@ public:
 
     const GraphicsDeviceInfo& GetDeviceInfo() const override;
 
+    AbstractUIRenderer& GetUIRenderer() override { return uiRenderer; }
+
 private:
     const SurfaceHost* surfaceHost = nullptr;
 
@@ -44,6 +47,8 @@ private:
     VulkanInstance instance;
     VulkanSurface surface;
     VulkanRenderContext renderContext;
+
+    VulkanUIRenderer uiRenderer;
 
     std::unordered_map<uint64, std::unique_ptr<VulkanMesh>> meshes;
     std::unordered_map<uint64, std::unique_ptr<VulkanTexture>> textures;

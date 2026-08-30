@@ -136,6 +136,12 @@ bool VulkanGraphicsSystem::Create(const SurfaceHost& _surfaceHost)
         return false;
     }
 
+    if (!uiRenderer.Create(&device))
+    {
+        Destroy();
+        return false;
+    }
+
     if (!RecreateRenderer(surfaceSize))
     {
         Destroy();
@@ -148,6 +154,8 @@ bool VulkanGraphicsSystem::Create(const SurfaceHost& _surfaceHost)
 void VulkanGraphicsSystem::Destroy()
 {
     renderContext.Destroy();
+
+    uiRenderer.Destroy();
 
     environment.Destroy();
     environmentMapAssetID = 0;

@@ -12,6 +12,7 @@ class AssetManager;
 class Scene;
 class SurfaceHost;
 struct UIRenderData;
+class AbstractUIRenderer;
 
 class AbstractGraphicsSystem
 {
@@ -30,6 +31,8 @@ public:
     const GraphicsConfig& GetConfig() const { return config; }
 
     virtual const GraphicsDeviceInfo& GetDeviceInfo() const = 0;
+
+    virtual AbstractUIRenderer& GetUIRenderer() = 0;
 
 protected:
     GraphicsConfig config{};

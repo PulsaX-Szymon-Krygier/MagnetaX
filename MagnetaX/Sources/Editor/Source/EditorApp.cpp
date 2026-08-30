@@ -13,6 +13,7 @@
 #include <MX/Input/InputSystem.h>
 #include <imgui.h>
 #include <memory>
+#include <iostream>
 
 namespace
 {
@@ -152,6 +153,10 @@ struct EditorApp::EditorAppImpl
 
     bool wantsExit = false;
 
+    unsigned char* imguiFontPixels = nullptr;
+    int32 imguiFontWidth = 0;
+    int32 imguiFontHeight = 0;
+
     bool Init()
     {
         editorWindow = CreatePlatformWindow();
@@ -194,11 +199,7 @@ struct EditorApp::EditorAppImpl
         io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
         io.BackendPlatformName = "MagnetaX";
 
-        unsigned char* fontPixels = nullptr;
-        int32 fontWidth = 0;
-        int32 fontHeight = 0;
-
-        io.Fonts->GetTexDataAsRGBA32(&fontPixels, &fontWidth, &fontHeight);
+        io.Fonts->GetTexDataAsRGBA32(&imguiFontPixels, &imguiFontWidth, &imguiFontHeight);
 
         clock.Reset();
 
@@ -219,7 +220,13 @@ struct EditorApp::EditorAppImpl
 
         BeginImGuiFrame();
 
-        ImGui::EndFrame();
+        ImGui::Begin("Hierarchy");
+        ImGui::TextUnformatted("MagnetaX Editor");
+        ImGui::End();
+
+        ImGui::Render();
+
+        const ImDrawData* drawData = ImGui::GetDrawData();
 
         UIRenderData uiData{};
         graphicsSystem->RenderScene(&editorScene, nullptr, uiData);
