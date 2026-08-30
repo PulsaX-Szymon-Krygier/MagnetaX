@@ -11,17 +11,18 @@
 #include <MX/Graphics/Renderer/UI/UIRenderData.h>
 #include <MX/Scene/Scene.h>
 #include <MX/Input/InputSystem.h>
-#include <MX/Graphics/Renderer/UI/AbstractUIRenderer.h>
-#include <MX/Graphics/Renderer/UI/UITexture.h>
 #include "UI/ImGui/ImGuiUIHost.h"
-#include "UI/ImGui/ImGuiAdapter.h"
+#include "UI/AbstractEditorUI.h"
+#include "UI/ImGui/ImGuiEditorUI.h"
 
 struct EditorApp::EditorAppImpl
 {
     std::unique_ptr<AbstractWindow> editorWindow;
     std::unique_ptr<AbstractGraphicsSystem> graphicsSystem;
     std::unique_ptr<InputSystem> inputSystem;
+
     std::unique_ptr<AbstractUIHost> uiHost;
+    std::unique_ptr<AbstractEditorUI> editorUI;
 
     Scene editorScene;
 
@@ -78,6 +79,8 @@ struct EditorApp::EditorAppImpl
             return false;
         }
 
+        editorUI = std::make_unique<ImGuiEditorUI>();
+
         clock.Reset();
 
         UIRenderData uiData{};
@@ -96,12 +99,7 @@ struct EditorApp::EditorAppImpl
         editorWindow->PollEvents();
 
         uiHost->BeginFrame(clock.Delta());
-
-        // Temp
-        ImGui::Begin("Test");
-        ImGui::TextUnformatted("TestText");
-        ImGui::End();
-
+        editorUI->Draw();
         uiHost->EndFrame();
 
         UIRenderData uiData{};
@@ -110,6 +108,8 @@ struct EditorApp::EditorAppImpl
 
     void Destroy()
     {
+        editorUI.reset();
+        
         if (graphicsSystem)
         {
             if (uiHost) uiHost->Destroy();

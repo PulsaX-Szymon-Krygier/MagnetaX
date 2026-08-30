@@ -4,7 +4,6 @@
 #include <MX/Graphics/Renderer/UI/AbstractUIRenderer.h>
 #include <MX/Window/AbstractWindow.h>
 #include <MX/Input/InputSystem.h>
-#include <MX/Graphics/Renderer/UI/AbstractUIRenderer.h>
 #include "ImGuiAdapter.h"
 #include <imgui.h>
 
