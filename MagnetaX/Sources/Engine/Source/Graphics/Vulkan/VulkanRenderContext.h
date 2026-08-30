@@ -6,6 +6,8 @@
 #include "Present/VulkanPresentContext.h"
 #include "Renderer/VulkanRenderer.h"
 
+class VulkanUIRenderer;
+
 struct VulkanRenderContextCreateInfo
 {
     VulkanDevice* device = nullptr;
@@ -16,6 +18,8 @@ struct VulkanRenderContextCreateInfo
     VkDescriptorSetLayout materialDescSetLayout = VK_NULL_HANDLE;
 
     RendererConfig config{};
+
+    VulkanUIRenderer* uiRenderer = nullptr;
 };
 
 class VulkanRenderContext

@@ -3,6 +3,7 @@
 #pragma once
 
 #include "UITexture.h"
+#include "UIDrawData.h"
 
 class AbstractUIRenderer
 {
@@ -11,4 +12,6 @@ public:
 
     virtual UITextureHandle CreateTexture(const UITextureCreateInfo& createInfo) = 0;
     virtual void DestroyTexture(UITextureHandle texture) = 0;
+
+    virtual UIDrawData& GetDrawData() = 0;
 };

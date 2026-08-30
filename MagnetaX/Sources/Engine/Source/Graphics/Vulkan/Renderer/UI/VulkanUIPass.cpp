@@ -5,10 +5,10 @@
 #if MX_GRAPHICS_VULKAN
 #include <MX/Generated/Shaders/UI/VulkanShaderUIVert.h>
 #include <MX/Generated/Shaders/UI/VulkanShaderUIFrag.h>
-#include <MX/UI/UIFont.h>
 #include <Graphics/Vulkan/VulkanDevice.h>
-#include <Graphics/Vulkan/VulkanInitializers.h>
+#include "VulkanUIRenderer.h"
 #include <cstddef>
+#include <algorithm>
 
 namespace
 {
@@ -20,7 +20,7 @@ namespace
 
 bool VulkanUIPass::Create(const VulkanUIPassCreateInfo& createInfo)
 {
-    if (!createInfo.device || createInfo.outFormat == VK_FORMAT_UNDEFINED) return false;
+    if (!createInfo.device || createInfo.outFormat == VK_FORMAT_UNDEFINED || !createInfo.uiRenderer) return false;
 
     const VkDevice buffDevice = createInfo.device->GetDevice();
     if (!buffDevice) return false;
@@ -28,36 +28,11 @@ bool VulkanUIPass::Create(const VulkanUIPassCreateInfo& createInfo)
     Destroy();
 
     device = createInfo.device;
+    uiRenderer = createInfo.uiRenderer;
 
-    VkDescriptorSetLayoutBinding fontBinding{};
-    fontBinding.binding = 0;
-    fontBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    fontBinding.descriptorCount = 1;
-    fontBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    const VkDescriptorSetLayout textureDescSetLayout = uiRenderer->GetTextureDescriptorSetLayout();
 
-    const VkDescriptorSetLayoutCreateInfo layoutInfo = VulkanInitializers::DescriptorSetLayoutCreateInfo(1, &fontBinding);
-
-    if (vkCreateDescriptorSetLayout(buffDevice, &layoutInfo, nullptr, &descSetLayout) != VK_SUCCESS)
-    {
-        Destroy();
-        return false;
-    }
-
-    VkDescriptorPoolSize poolSize{};
-    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = 1;
-
-    const VkDescriptorPoolCreateInfo poolInfo = VulkanInitializers::DescriptorPoolCreateInfo(1, 1, &poolSize);
-
-    if (vkCreateDescriptorPool(buffDevice, &poolInfo, nullptr, &descPool) != VK_SUCCESS)
-    {
-        Destroy();
-        return false;
-    }
-
-    const VkDescriptorSetAllocateInfo allocInfo = VulkanInitializers::DescriptorSetAllocateInfo(descPool, 1, &descSetLayout);
-
-    if (vkAllocateDescriptorSets(buffDevice, &allocInfo, &descSet) != VK_SUCCESS)
+    if (!textureDescSetLayout)
     {
         Destroy();
         return false;
@@ -65,7 +40,7 @@ bool VulkanUIPass::Create(const VulkanUIPassCreateInfo& createInfo)
 
     VkVertexInputBindingDescription vertexBinding{};
     vertexBinding.binding = 0;
-    vertexBinding.stride = sizeof(UIVertex);
+    vertexBinding.stride = sizeof(UIDrawVertex);
     vertexBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
     VkVertexInputAttributeDescription vertexAttribs[3]{};
@@ -73,17 +48,17 @@ bool VulkanUIPass::Create(const VulkanUIPassCreateInfo& createInfo)
     vertexAttribs[0].location = 0;
     vertexAttribs[0].binding = 0;
     vertexAttribs[0].format = VK_FORMAT_R32G32_SFLOAT;
-    vertexAttribs[0].offset = offsetof(UIVertex, position);
+    vertexAttribs[0].offset = offsetof(UIDrawVertex, position);
 
     vertexAttribs[1].location = 1;
     vertexAttribs[1].binding = 0;
     vertexAttribs[1].format = VK_FORMAT_R32G32_SFLOAT;
-    vertexAttribs[1].offset = offsetof(UIVertex, uv);
+    vertexAttribs[1].offset = offsetof(UIDrawVertex, uv);
 
     vertexAttribs[2].location = 2;
     vertexAttribs[2].binding = 0;
     vertexAttribs[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-    vertexAttribs[2].offset = offsetof(UIVertex, color);
+    vertexAttribs[2].offset = offsetof(UIDrawVertex, color);
 
     VkPushConstantRange pushConstRange{};
     pushConstRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
@@ -101,7 +76,7 @@ bool VulkanUIPass::Create(const VulkanUIPassCreateInfo& createInfo)
     pipelineInfo.vertexAttributeCount = 3;
     pipelineInfo.colorFormats = &createInfo.outFormat;
     pipelineInfo.colorFormatCount = 1;
-    pipelineInfo.descriptorSetLayouts = &descSetLayout;
+    pipelineInfo.descriptorSetLayouts = &textureDescSetLayout;
     pipelineInfo.descriptorSetLayoutCount = 1;
     pipelineInfo.pushConstantRanges = &pushConstRange;
     pipelineInfo.pushConstantRangeCount = 1;
@@ -120,47 +95,22 @@ void VulkanUIPass::Destroy()
 {
     pipeline.Destroy();
     vertexBuffer.Destroy();
-    fontAtlas.Destroy();
+    indexBuffer.Destroy();
 
-    if (device)
-    {
-        const VkDevice buffDevice = device->GetDevice();
-
-        if (buffDevice)
-        {
-            if (descPool) vkDestroyDescriptorPool(buffDevice, descPool, nullptr);
-            if (descSetLayout) vkDestroyDescriptorSetLayout(buffDevice, descSetLayout, nullptr);
-        }
-    }
-
-    descSet = VK_NULL_HANDLE;
-    descPool = VK_NULL_HANDLE;
-    descSetLayout = VK_NULL_HANDLE;
-
-    font = nullptr;
-    fontVersion = 0;
+    uiRenderer = nullptr;
 
     device = nullptr;
 }
 
 void VulkanUIPass::Record(const VulkanUIPassRenderInfo& renderInfo)
 {
-    if (!renderInfo.cmdBuffer || !renderInfo.targetView || !renderInfo.uiData) return;
+    if (!renderInfo.cmdBuffer || !renderInfo.targetView || !uiRenderer) return;
     if (renderInfo.extent.width == 0 || renderInfo.extent.height == 0) return;
 
-    const UIRenderData& uiData = *renderInfo.uiData;
+    const UIDrawData& drawData = uiRenderer->GetDrawData();
 
-    if (!uiData.font || uiData.vertices.empty()) return;
-
-    if (font != uiData.font || fontVersion != uiData.fontVersion)
-    {
-        if (!SetFont(*uiData.font)) return;
-
-        font = uiData.font;
-        fontVersion = uiData.fontVersion;
-    }
-
-    if (!UpdateVertexBuffer(uiData.vertices)) return;
+    if (drawData.vertices.empty() || drawData.indices.empty() || drawData.commands.empty()) return;
+    if (!UpdateBuffers(drawData)) return;
 
     VkRenderingAttachmentInfo colorAttachment{};
     colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -188,33 +138,48 @@ void VulkanUIPass::Record(const VulkanUIPassRenderInfo& renderInfo)
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
 
-    VkRect2D scissor{};
-    scissor.offset = { 0, 0 };
-    scissor.extent = renderInfo.extent;
-
     vkCmdSetViewport(renderInfo.cmdBuffer, 0, 1, &viewport);
-    vkCmdSetScissor(renderInfo.cmdBuffer, 0, 1, &scissor);
-
     vkCmdBindPipeline(renderInfo.cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.GetPipeline());
-
-    const VkBuffer vertexBufferHandle = vertexBuffer.GetBuffer();
-    const VkDeviceSize vertexOffset = 0;
-
-    vkCmdBindVertexBuffers(renderInfo.cmdBuffer, 0, 1, &vertexBufferHandle, &vertexOffset);
-    vkCmdBindDescriptorSets(renderInfo.cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        pipeline.GetPipelineLayout(), 0, 1, &descSet, 0, nullptr);
 
     UIPushConst pushConst{};
     pushConst.viewportSize = Vector2f((float32)renderInfo.extent.width, (float32)renderInfo.extent.height);
 
-    vkCmdPushConstants(renderInfo.cmdBuffer, pipeline.GetPipelineLayout(),
-        VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(UIPushConst), &pushConst);
+    vkCmdPushConstants(renderInfo.cmdBuffer, pipeline.GetPipelineLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(UIPushConst), &pushConst);
+    
+    const VkBuffer vertexBufferHandle = vertexBuffer.GetBuffer();
+    const VkBuffer indexBufferHandle = indexBuffer.GetBuffer();
+    const VkDeviceSize vertexOffset = 0;
 
-    vkCmdDraw(renderInfo.cmdBuffer, (uint32)uiData.vertices.size(), 1, 0, 0);
+    vkCmdBindVertexBuffers(renderInfo.cmdBuffer, 0, 1, &vertexBufferHandle, &vertexOffset);
+    vkCmdBindIndexBuffer(renderInfo.cmdBuffer, indexBufferHandle, 0, VK_INDEX_TYPE_UINT32);
+
+    for (const UIDrawCommand& command : drawData.commands)
+    {
+        if (command.indexCount == 0 || !command.texture) continue;
+
+        const VkDescriptorSet textureDescSet = uiRenderer->GetTextureDescriptorSet(command.texture);
+        if (!textureDescSet) continue;
+
+        const float32 clipMinX = std::max(command.clipMin.x, 0.0f);
+        const float32 clipMinY = std::max(command.clipMin.y, 0.0f);
+        const float32 clipMaxX = std::min(command.clipMax.x, (float32)renderInfo.extent.width);
+        const float32 clipMaxY = std::min(command.clipMax.y, (float32)renderInfo.extent.height);
+
+        if (clipMaxX <= clipMinX || clipMaxY <= clipMinY) continue;
+
+        VkRect2D scissor{};
+        scissor.offset = { (int32)clipMinX, (int32)clipMinY };
+        scissor.extent = { (uint32)(clipMaxX - clipMinX), (uint32)(clipMaxY - clipMinY) };
+
+        vkCmdSetScissor(renderInfo.cmdBuffer, 0, 1, &scissor);
+        vkCmdBindDescriptorSets(renderInfo.cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.GetPipelineLayout(), 0, 1, &textureDescSet, 0, nullptr);
+        vkCmdDrawIndexed(renderInfo.cmdBuffer, command.indexCount, 1, command.indexOffset, (int32)command.vertexOffset, 0);
+    }
 
     vkCmdEndRendering(renderInfo.cmdBuffer);
 }
 
+/* Keeping for reference
 bool VulkanUIPass::SetFont(const UIFont& _font)
 {
     if (!device || !descSet) return false;
@@ -257,25 +222,34 @@ bool VulkanUIPass::SetFont(const UIFont& _font)
 
     return true;
 }
+*/
 
-bool VulkanUIPass::UpdateVertexBuffer(std::span<const UIVertex> vertices)
+bool VulkanUIPass::UpdateBuffers(const UIDrawData& drawData)
 {
-    if (!device || vertices.empty()) return false;
+    if (!device || drawData.vertices.empty() || drawData.indices.empty()) return false;
 
-    const VkDeviceSize dataSize = (VkDeviceSize)vertices.size() * sizeof(UIVertex);
+    const VkMemoryPropertyFlags memoryProps = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
-    if (vertexBuffer.GetSize() < dataSize)
+    const VkDeviceSize vertexDataSize = (VkDeviceSize)drawData.vertices.size() * sizeof(UIDrawVertex);
+
+    if (vertexBuffer.GetSize() < vertexDataSize)
     {
         vertexBuffer.Destroy();
 
-        const VkMemoryPropertyFlags memoryProps = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-
-        if (!vertexBuffer.Create(device, dataSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, memoryProps))
-        {
-            return false;
-        }
+        if (!vertexBuffer.Create(device, vertexDataSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, memoryProps)) return false;
     }
 
-    return vertexBuffer.Upload(vertices.data(), dataSize);
+    if (!vertexBuffer.Upload(drawData.vertices.data(), vertexDataSize)) return false;
+
+    const VkDeviceSize indexDataSize = (VkDeviceSize)drawData.indices.size() * sizeof(uint32);
+
+    if (indexBuffer.GetSize() < indexDataSize)
+    {
+        indexBuffer.Destroy();
+
+        if (!indexBuffer.Create(device, indexDataSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, memoryProps)) return false;
+    }
+
+    return indexBuffer.Upload(drawData.indices.data(), indexDataSize);
 }
 #endif

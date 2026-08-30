@@ -22,6 +22,7 @@
 class VulkanPresentContext;
 struct RenderSceneData;
 struct UIRenderData;
+class VulkanUIRenderer;
 
 enum class VulkanFrameResult
 {
@@ -38,6 +39,8 @@ struct VulkanRendererCreateInfo
     VkDescriptorSetLayout materialDescSetLayout = VK_NULL_HANDLE;
 
     RendererConfig config{};
+
+    VulkanUIRenderer* uiRenderer = nullptr;
 };
 
 struct VulkanRendererFrameInfo

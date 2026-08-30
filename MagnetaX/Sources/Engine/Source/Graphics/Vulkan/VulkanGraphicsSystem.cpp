@@ -220,6 +220,7 @@ bool VulkanGraphicsSystem::RecreateRenderer(const Size2i& surfaceSize)
     renderInfo.extent = { surfaceSize.width, surfaceSize.height };
     renderInfo.materialDescSetLayout = materialDescSetLayout;
     renderInfo.config = config.renderer;
+    renderInfo.uiRenderer = &uiRenderer;
 
     if (!renderContext.Create(renderInfo))
     {

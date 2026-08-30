@@ -14,7 +14,7 @@
 
 bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
 {
-    if (!createInfo.device || !createInfo.presentContext || !createInfo.materialDescSetLayout) return false;
+    if (!createInfo.device || !createInfo.presentContext || !createInfo.materialDescSetLayout || !createInfo.uiRenderer) return false;
 
     const VkDevice buffDevice = createInfo.device->GetDevice();
     if (!buffDevice) return false;
@@ -178,6 +178,7 @@ bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
     VulkanUIPassCreateInfo uiInfo{};
     uiInfo.device = device;
     uiInfo.outFormat = swapchainFormat;
+    uiInfo.uiRenderer = createInfo.uiRenderer;
 
     if (!uiPass.Create(uiInfo))
     {
@@ -464,7 +465,6 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
     uiInfo.cmdBuffer = cmdBuffer;
     uiInfo.targetView = targetImage.GetImageView();
     uiInfo.extent = extent;
-    uiInfo.uiData = &uiData;
 
     uiPass.Record(uiInfo);
 

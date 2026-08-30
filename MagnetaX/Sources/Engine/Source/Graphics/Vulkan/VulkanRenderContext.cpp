@@ -5,7 +5,7 @@
 #if MX_GRAPHICS_VULKAN
 bool VulkanRenderContext::Create(const VulkanRenderContextCreateInfo& createInfo)
 {
-    if (!createInfo.device || !createInfo.surface || !createInfo.materialDescSetLayout) return false;
+    if (!createInfo.device || !createInfo.surface || !createInfo.materialDescSetLayout || !createInfo.uiRenderer) return false;
     if (createInfo.extent.width == 0 || createInfo.extent.height == 0) return false;
 
     Destroy();
@@ -26,6 +26,7 @@ bool VulkanRenderContext::Create(const VulkanRenderContextCreateInfo& createInfo
     rendererInfo.presentContext = &presentContext;
     rendererInfo.materialDescSetLayout = createInfo.materialDescSetLayout;
     rendererInfo.config = createInfo.config;
+    rendererInfo.uiRenderer = createInfo.uiRenderer;
 
     if (!renderer.Create(rendererInfo))
     {
