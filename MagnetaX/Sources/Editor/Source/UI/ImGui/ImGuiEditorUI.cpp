@@ -57,6 +57,21 @@ void ImGuiEditorUI::Draw(EditorContext& context)
                 transform->position.Set(position[0], position[1], position[2]);
             }
 
+            Vector3f& rotationEuler = context.rotationEulerHints.try_emplace(entity.GetID(), Vector3f(0.0f)).first->second;
+
+            float32 rotation[] =
+            {
+                rotationEuler.x,
+                rotationEuler.y,
+                rotationEuler.z
+            };
+
+            if (ImGui::DragFloat3("Rotation", rotation, 1.0f))
+            {
+                rotationEuler.Set(rotation[0], rotation[1], rotation[2]);
+                transform->rotation = Quaternion::FromYawPitchRollDegrees(rotationEuler.y, rotationEuler.x, rotationEuler.z);
+            }
+
             float32 scale[] =
             {
                 transform->scale.x,

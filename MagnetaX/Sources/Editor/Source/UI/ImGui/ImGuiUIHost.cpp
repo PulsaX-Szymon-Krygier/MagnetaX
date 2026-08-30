@@ -26,13 +26,13 @@ bool ImGuiUIHost::Create(const UIHostCreateInfo& createInfo)
     int fontWidth = 0;
     int fontHeight = 0;
 
-    io.Fonts->GetTexDataAsAlpha8(&fontPixels, &fontWidth, &fontHeight);
+    io.Fonts->GetTexDataAsRGBA32(&fontPixels, &fontWidth, &fontHeight);
 
     UITextureCreateInfo fontTextureInfo{};
     fontTextureInfo.pixels = fontPixels;
     fontTextureInfo.width = (uint32)fontWidth;
     fontTextureInfo.height = (uint32)fontHeight;
-    fontTextureInfo.format = ImageFormat::R8_UNORM;
+    fontTextureInfo.format = ImageFormat::RGBA8_UNORM;
 
     fontTexture = renderer->CreateTexture(fontTextureInfo);
 
