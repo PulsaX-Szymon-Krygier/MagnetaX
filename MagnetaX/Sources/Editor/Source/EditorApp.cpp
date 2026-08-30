@@ -13,28 +13,21 @@
 #include <MX/Input/InputSystem.h>
 #include <MX/Graphics/Renderer/UI/AbstractUIRenderer.h>
 #include <MX/Graphics/Renderer/UI/UITexture.h>
-#include "ImGui/ImGuiAdapter.h"
+#include "UI/ImGui/ImGuiUIHost.h"
+#include "UI/ImGui/ImGuiAdapter.h"
 
-// All ImGui specific methods, members, etc. will
-// be moved to proper classes/files later
-// (similar to GameApp, no library/platform specific stuff)
 struct EditorApp::EditorAppImpl
 {
     std::unique_ptr<AbstractWindow> editorWindow;
     std::unique_ptr<AbstractGraphicsSystem> graphicsSystem;
     std::unique_ptr<InputSystem> inputSystem;
+    std::unique_ptr<AbstractUIHost> uiHost;
 
     Scene editorScene;
 
     Clock clock;
 
     bool wantsExit = false;
-
-    UITextureHandle uiFontTexture;
-
-    unsigned char* imguiFontPixels = nullptr;
-    int32 imguiFontWidth = 0;
-    int32 imguiFontHeight = 0;
 
     bool Init()
     {
@@ -71,30 +64,19 @@ struct EditorApp::EditorAppImpl
             return false;
         }
 
-        IMGUI_CHECKVERSION();
-        ImGui::CreateContext();
+        // For now it will be ImGUI only
+        uiHost = std::make_unique<ImGuiUIHost>();
 
-        ImGuiIO& io = ImGui::GetIO();
-        io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-        io.BackendPlatformName = "MagnetaX";
+        UIHostCreateInfo uiHostInfo{};
+        uiHostInfo.renderer = &graphicsSystem->GetUIRenderer();
+        uiHostInfo.window = editorWindow.get();
+        uiHostInfo.input = inputSystem.get();
 
-        io.Fonts->GetTexDataAsAlpha8(&imguiFontPixels, &imguiFontWidth, &imguiFontHeight);
-
-        UITextureCreateInfo fontTextureInfo{};
-        fontTextureInfo.pixels = imguiFontPixels;
-        fontTextureInfo.width = (uint32)imguiFontWidth;
-        fontTextureInfo.height = (uint32)imguiFontHeight;
-        fontTextureInfo.format = ImageFormat::R8_UNORM;
-
-        uiFontTexture = graphicsSystem->GetUIRenderer().CreateTexture(fontTextureInfo);
-
-        if (!uiFontTexture)
+        if (!uiHost->Create(uiHostInfo))
         {
             Destroy();
             return false;
         }
-
-        io.Fonts->SetTexID((ImTextureID)uiFontTexture.id);
 
         clock.Reset();
 
@@ -113,17 +95,14 @@ struct EditorApp::EditorAppImpl
         inputSystem->BeginFrame();
         editorWindow->PollEvents();
 
-        BeginImGuiFrame();
+        uiHost->BeginFrame(clock.Delta());
 
-        ImGui::Begin("Hierarchy");
-        ImGui::TextUnformatted("MagnetaX Editor");
+        // Temp
+        ImGui::Begin("Test");
+        ImGui::TextUnformatted("TestText");
         ImGui::End();
 
-        ImGui::Render();
-
-        const ImDrawData* drawData = ImGui::GetDrawData();
-
-        if (drawData) ImGuiAdapter::FromImGuiDrawData(*drawData, graphicsSystem->GetUIRenderer().GetDrawData());
+        uiHost->EndFrame();
 
         UIRenderData uiData{};
         graphicsSystem->RenderScene(&editorScene, nullptr, uiData);
@@ -131,9 +110,13 @@ struct EditorApp::EditorAppImpl
 
     void Destroy()
     {
-        if (graphicsSystem) graphicsSystem->Destroy();
+        if (graphicsSystem)
+        {
+            if (uiHost) uiHost->Destroy();
+            graphicsSystem->Destroy();
+        }
 
-        uiFontTexture = {};
+        uiHost.reset();
         graphicsSystem.reset();
 
         if (editorWindow)
@@ -144,31 +127,8 @@ struct EditorApp::EditorAppImpl
 
         inputSystem.reset();
 
-        if (ImGui::GetCurrentContext())
-        {
-            ImGui::DestroyContext();
-        }
-
         if (editorWindow) editorWindow->Destroy();
         editorWindow.reset();
-    }
-
-    void BeginImGuiFrame()
-    {
-        ImGuiIO& io = ImGui::GetIO();
-
-        const Size2i windowSize = editorWindow->GetSize();
-        const Size2i surfaceSize = editorWindow->GetSurfaceSize();
-
-        io.DisplaySize = ImVec2((float32)windowSize.width, (float32)windowSize.height);
-        io.DisplayFramebufferScale = ImVec2(windowSize.width > 0 ? (float32)surfaceSize.width / (float32)windowSize.width : 1.0f,
-            windowSize.height > 0 ? (float32)surfaceSize.height / (float32)windowSize.height : 1.0f);
-        
-        io.DeltaTime = (float32)clock.Delta();
-
-        ImGuiAdapter::ToImGuiInput(*inputSystem);
-
-        ImGui::NewFrame();
     }
 
     void HandleWindowEvent(const WindowEvent& event)
@@ -189,13 +149,13 @@ struct EditorApp::EditorAppImpl
         }
         case WindowEventType::FOCUS_GAINED:
         {
-            if (ImGui::GetCurrentContext()) ImGui::GetIO().AddFocusEvent(true);
+            if (uiHost) uiHost->SetFocus(true);
 
             break;
         }
         case WindowEventType::FOCUS_LOST:
         {
-            if (ImGui::GetCurrentContext()) ImGui::GetIO().AddFocusEvent(false);
+            if (uiHost) uiHost->SetFocus(false);
 
             break;
         }
