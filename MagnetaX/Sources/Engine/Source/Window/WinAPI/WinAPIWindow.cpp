@@ -115,6 +115,7 @@ bool WinAPIWindow::Create(const WindowConfig& createInfo)
     windowClass.lpfnWndProc = &WinAPIWindow::StaticWndProc;
     windowClass.hInstance = hInstance;
     windowClass.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    windowClass.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
     windowClass.lpszClassName = WINDOW_CLASS_NAME;
 
     RegisterClassExW(&windowClass);

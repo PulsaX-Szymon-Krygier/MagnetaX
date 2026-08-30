@@ -111,6 +111,11 @@ bool CocoaWindow::Create(const WindowConfig& createInfo)
     _impl->view = [[MXCocoaView alloc] initWithFrame:contentRect];
     _impl->metalLayer = [CAMetalLayer layer];
 
+    [_impl->window setBackgroundColor:[NSColor blackColor]];
+
+    _impl->metalLayer.backgroundColor = [NSColor blackColor].CGColor;
+    _impl->metalLayer.opaque = YES;
+
     [_impl->view setWantsLayer:YES];
     [_impl->view setLayer:_impl->metalLayer];
     _impl->metalLayer.delegate = (id<CALayerDelegate>)_impl->view;
