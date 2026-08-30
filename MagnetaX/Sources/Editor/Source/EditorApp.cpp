@@ -13,11 +13,11 @@
 #include <MX/Input/InputSystem.h>
 #include <MX/Graphics/Renderer/UI/AbstractUIRenderer.h>
 #include <MX/Graphics/Renderer/UI/UITexture.h>
-#include <MX/Graphics/Renderer/UI/UIDrawData.h>
 #include "ImGui/ImGuiAdapter.h"
-#include <imgui.h>
-#include <memory>
 
+// All ImGui specific methods, members, etc. will
+// be moved to proper classes/files later
+// (similar to GameApp, no library/platform specific stuff)
 struct EditorApp::EditorAppImpl
 {
     std::unique_ptr<AbstractWindow> editorWindow;
@@ -31,7 +31,6 @@ struct EditorApp::EditorAppImpl
     bool wantsExit = false;
 
     UITextureHandle uiFontTexture;
-    UIDrawData uiDrawData;
 
     unsigned char* imguiFontPixels = nullptr;
     int32 imguiFontWidth = 0;
@@ -79,13 +78,13 @@ struct EditorApp::EditorAppImpl
         io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
         io.BackendPlatformName = "MagnetaX";
 
-        io.Fonts->GetTexDataAsRGBA32(&imguiFontPixels, &imguiFontWidth, &imguiFontHeight);
+        io.Fonts->GetTexDataAsAlpha8(&imguiFontPixels, &imguiFontWidth, &imguiFontHeight);
 
         UITextureCreateInfo fontTextureInfo{};
         fontTextureInfo.pixels = imguiFontPixels;
         fontTextureInfo.width = (uint32)imguiFontWidth;
         fontTextureInfo.height = (uint32)imguiFontHeight;
-        fontTextureInfo.format = ImageFormat::RGBA8_UNORM;
+        fontTextureInfo.format = ImageFormat::R8_UNORM;
 
         uiFontTexture = graphicsSystem->GetUIRenderer().CreateTexture(fontTextureInfo);
 
@@ -124,7 +123,7 @@ struct EditorApp::EditorAppImpl
 
         const ImDrawData* drawData = ImGui::GetDrawData();
 
-        if (drawData) ImGuiAdapter::FromImGuiDrawData(*drawData, uiDrawData);
+        if (drawData) ImGuiAdapter::FromImGuiDrawData(*drawData, graphicsSystem->GetUIRenderer().GetDrawData());
 
         UIRenderData uiData{};
         graphicsSystem->RenderScene(&editorScene, nullptr, uiData);
@@ -132,17 +131,9 @@ struct EditorApp::EditorAppImpl
 
     void Destroy()
     {
-        if (graphicsSystem)
-        {
-            if (uiFontTexture)
-            {
-                graphicsSystem->GetUIRenderer().DestroyTexture(uiFontTexture);
-                uiFontTexture = {};
-            }
+        if (graphicsSystem) graphicsSystem->Destroy();
 
-            graphicsSystem->Destroy();
-        }
-
+        uiFontTexture = {};
         graphicsSystem.reset();
 
         if (editorWindow)
@@ -167,8 +158,12 @@ struct EditorApp::EditorAppImpl
         ImGuiIO& io = ImGui::GetIO();
 
         const Size2i windowSize = editorWindow->GetSize();
+        const Size2i surfaceSize = editorWindow->GetSurfaceSize();
 
         io.DisplaySize = ImVec2((float32)windowSize.width, (float32)windowSize.height);
+        io.DisplayFramebufferScale = ImVec2(windowSize.width > 0 ? (float32)surfaceSize.width / (float32)windowSize.width : 1.0f,
+            windowSize.height > 0 ? (float32)surfaceSize.height / (float32)windowSize.height : 1.0f);
+        
         io.DeltaTime = (float32)clock.Delta();
 
         ImGuiAdapter::ToImGuiInput(*inputSystem);
@@ -182,10 +177,7 @@ struct EditorApp::EditorAppImpl
         {
         case WindowEventType::RESIZED:
         {
-            if (graphicsSystem)
-            {
-                graphicsSystem->RecreateRenderer(editorWindow->GetSurfaceSize());
-            }
+            if (graphicsSystem) graphicsSystem->RecreateRenderer(editorWindow->GetSurfaceSize());
 
             break;
         }
@@ -197,19 +189,13 @@ struct EditorApp::EditorAppImpl
         }
         case WindowEventType::FOCUS_GAINED:
         {
-            if (ImGui::GetCurrentContext())
-            {
-                ImGui::GetIO().AddFocusEvent(true);
-            }
+            if (ImGui::GetCurrentContext()) ImGui::GetIO().AddFocusEvent(true);
 
             break;
         }
         case WindowEventType::FOCUS_LOST:
         {
-            if (ImGui::GetCurrentContext())
-            {
-                ImGui::GetIO().AddFocusEvent(false);
-            }
+            if (ImGui::GetCurrentContext()) ImGui::GetIO().AddFocusEvent(false);
 
             break;
         }
