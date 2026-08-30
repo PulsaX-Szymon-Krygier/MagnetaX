@@ -141,6 +141,8 @@ void VulkanUIRenderer::DestroyTexture(UITextureHandle texture)
     const auto it = textures.find(texture.id);
     if (it == textures.end()) return;
 
+    vkDeviceWaitIdle(device->GetDevice());
+
     if (it->second.descSet && textureDescPool) vkFreeDescriptorSets(device->GetDevice(), textureDescPool, 1, &it->second.descSet);
     if (it->second.texture) it->second.texture->Destroy();
 

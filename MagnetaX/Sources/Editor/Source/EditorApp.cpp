@@ -10,10 +10,12 @@
 #include <MX/Graphics/GraphicsSystemFactory.h>
 #include <MX/Graphics/Renderer/UI/UIRenderData.h>
 #include <MX/Scene/Scene.h>
+#include <MX/Scene/Component/NameComponent.h>
 #include <MX/Input/InputSystem.h>
 #include "UI/ImGui/ImGuiUIHost.h"
 #include "UI/AbstractEditorUI.h"
 #include "UI/ImGui/ImGuiEditorUI.h"
+#include "EditorContext.h"
 
 struct EditorApp::EditorAppImpl
 {
@@ -25,6 +27,7 @@ struct EditorApp::EditorAppImpl
     std::unique_ptr<AbstractEditorUI> editorUI;
 
     Scene editorScene;
+    EditorContext context;
 
     Clock clock;
 
@@ -80,6 +83,23 @@ struct EditorApp::EditorAppImpl
         }
 
         editorUI = std::make_unique<ImGuiEditorUI>();
+        context.scene = &editorScene;
+
+        // TESTS!!!!
+        Entity root = editorScene.CreateEntity();
+        root.AddComponent<NameComponent>().name = "Root";
+
+        Entity childA = editorScene.CreateEntity();
+        childA.AddComponent<NameComponent>().name = "Child A";
+        childA.SetParent(root);
+
+        Entity childB = editorScene.CreateEntity();
+        childB.AddComponent<NameComponent>().name = "Child B";
+        childB.SetParent(root);
+
+        Entity nestedChild = editorScene.CreateEntity();
+        nestedChild.AddComponent<NameComponent>().name = "Nested Child";
+        nestedChild.SetParent(childA);
 
         clock.Reset();
 
@@ -99,7 +119,7 @@ struct EditorApp::EditorAppImpl
         editorWindow->PollEvents();
 
         uiHost->BeginFrame(clock.Delta());
-        editorUI->Draw();
+        editorUI->Draw(context);
         uiHost->EndFrame();
 
         UIRenderData uiData{};
