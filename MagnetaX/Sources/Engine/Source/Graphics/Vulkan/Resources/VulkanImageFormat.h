@@ -10,5 +10,7 @@ class VulkanImageFormat
 {
 public:
     static VkFormat FromImageFormat(ImageFormat format);
+    static ImageFormat ToImageFormat(VkFormat format);
+
     static VkImageAspectFlags GetImageAspect(ImageFormat format);
 };

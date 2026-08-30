@@ -26,6 +26,29 @@ VkFormat VulkanImageFormat::FromImageFormat(ImageFormat format)
     }
 }
 
+ImageFormat VulkanImageFormat::ToImageFormat(VkFormat format)
+{
+    switch (format)
+    {
+    case VK_FORMAT_R8G8B8A8_SRGB:
+        return ImageFormat::RGBA8_SRGB;
+    case VK_FORMAT_B8G8R8A8_SRGB:
+        return ImageFormat::BGRA8_SRGB;
+    case VK_FORMAT_R8G8B8A8_UNORM:
+        return ImageFormat::RGBA8_UNORM;
+    case VK_FORMAT_R16G16B16A16_SFLOAT:
+        return ImageFormat::RGBA16_FLOAT;
+    case VK_FORMAT_R32G32B32A32_SFLOAT:
+        return ImageFormat::RGBA32_FLOAT;
+    case VK_FORMAT_D32_SFLOAT:
+        return ImageFormat::D32_FLOAT;
+    case VK_FORMAT_R8_UNORM:
+        return ImageFormat::R8_UNORM;
+    default:
+        return ImageFormat::UNKNOWN;
+    }
+}
+
 VkImageAspectFlags VulkanImageFormat::GetImageAspect(ImageFormat format)
 {
     switch (format)
