@@ -4,6 +4,7 @@
 
 #include <MX/Graphics/GraphicsDebugView.h>
 #include <MX/Graphics/Renderer/RendererConfig.h>
+#include <MX/Graphics/Renderer/UI/UITexture.h>
 #include <Graphics/Vulkan/VulkanCommon.h>
 #include <Graphics/Vulkan/Resources/VulkanImage.h>
 #include "VulkanCommandPool.h"
@@ -53,6 +54,63 @@ struct VulkanRendererFrameInfo
     VulkanEnvironmentRenderData environment{};
 };
 
+// Since MagnetaX is under active dev and doesn't have
+// proper documentation yet, I will keep current rendering
+// flow there and edit it as I change something
+// 
+// This flow will be later a part of documentation! :)
+//
+//   Scene (ECS layer)
+//     |
+//     v
+// RenderSceneData + VulkanDrawItems (Graphics layer)
+//     |
+//     --------------------------------
+//     |                              |
+//     v                              v
+// Directional shadows           Spot shadows
+// (directionalShadowPass)     (spotShadowPass)
+//     |                              |
+//     |                              |
+//     ----------------+---------------
+//                     |
+//                     v
+//           GBuffer (gBufferPass)
+//                     |
+//          -----------+-----------
+//          |                     |
+//          | FINAL               | DEBUG
+//          v                     v
+//       Lighting             Debug pass
+//    (lightingPass)      (gBufferDebugPass)
+//          |                     |
+//      Sky  (skyPass)            |
+//          |                     |
+//          v                     |
+//      sceneColor                |
+//          |                     |
+//  PostFX (ppostFXPass)          |
+//   exposure / tone map / AA     |
+//          |                     |
+//          -----------------------
+//                     |
+//                     v
+//         displayColor (display ready)
+//                     |
+//                     v
+//            UI composition (uiPass)
+//                     |
+//                     v
+//              swapchainImage
+//                     |
+//                     v
+//                  Present
+//
+// sceneColor is the scene referred
+// color result used as input for PostFX
+// 
+// display color is the display ready scene
+// result before final UI/presentation
 class VulkanRenderer
 {
 public:
@@ -69,28 +127,44 @@ public:
 
 private:
     VulkanDevice* device = nullptr;
-    VulkanPresentContext* presentContext = nullptr;
 
+    VulkanPresentContext* presentContext = nullptr;
     RendererConfig config{};
 
     VulkanCommandPool commandPool;
     VkCommandBuffer cmdBuffer = VK_NULL_HANDLE;
 
+    // Shadow passes
     VulkanShadowDepthPass directionalShadowPass;
     VulkanShadowDepthPass spotShadowPass;
+    //VulkanShadowDepthPass pointShadowPass;
 
+    // GBuffer pass
     VulkanGBufferPass gBufferPass;
 
+    // Lighting and sky passes
+    VulkanLightingPass lightingPass;
+    VulkanSkyPass skyPass;
+
+    // Scene color
     VulkanImage sceneColor;
     VkImageLayout sceneColorLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-    VulkanLightingPass lightingPass;
+    // PostFX pass
+    VulkanPostFXPass postFXPass;
+
+    // Debug pass
     VulkanGBufferDebugPass gBufferDebugPass;
 
-    VulkanPostFXPass postFXPass;
-    VulkanUIPass uiPass;
+    // Display color
+    VulkanImage displayColor;
+    VkImageLayout displayColorLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkSampler displayColorSampler = VK_NULL_HANDLE;
+    UITextureHandle displayColorUITexture;
 
-    VulkanSkyPass skyPass;
+    // UI pass
+    VulkanUIPass uiPass;
+    VulkanUIRenderer* uiRenderer = nullptr;
 
     VkSemaphore imageAvailable = VK_NULL_HANDLE;
     std::vector<VkSemaphore> renderFinishedSemaphores;

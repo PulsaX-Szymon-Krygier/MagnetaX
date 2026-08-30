@@ -7,6 +7,7 @@
 #include <Graphics/Renderer/Scene/RenderSceneData.h>
 #include <Graphics/Renderer/Shadow/ShadowFrameBuilder.h>
 #include <Graphics/Renderer/Shadow/ShadowFrameData.h>
+#include <Graphics/Vulkan/Renderer/UI/VulkanUIRenderer.h>
 #include "../Present/VulkanPresentContext.h"
 #include "../VulkanDevice.h"
 #include "../VulkanInitializers.h"
@@ -33,6 +34,7 @@ bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
     device = createInfo.device;
     presentContext = createInfo.presentContext;
     config = createInfo.config;
+    uiRenderer = createInfo.uiRenderer;
 
     if (!commandPool.Create(buffDevice, device->GetGraphicsQueueFamily()))
     {
@@ -127,6 +129,43 @@ bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
         return false;
     }
 
+    VulkanImageCreateInfo displayColorInfo{};
+    displayColorInfo.device = device;
+    displayColorInfo.extent = extent;
+    displayColorInfo.format = ImageFormat::RGBA8_SRGB;
+    displayColorInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+    if (!displayColor.Create(displayColorInfo))
+    {
+        Destroy();
+        return false;
+    }
+
+    VkSamplerCreateInfo displaySamplerInfo{};
+    displaySamplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    displaySamplerInfo.magFilter = VK_FILTER_LINEAR;
+    displaySamplerInfo.minFilter = VK_FILTER_LINEAR;
+    displaySamplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    displaySamplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    displaySamplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    displaySamplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    displaySamplerInfo.minLod = 0.0f;
+    displaySamplerInfo.maxLod = 0.0f;
+
+    if (vkCreateSampler(buffDevice, &displaySamplerInfo, nullptr, &displayColorSampler) != VK_SUCCESS)
+    {
+        Destroy();
+        return false;
+    }
+
+    displayColorUITexture = uiRenderer->RegisterExternalTexture(displayColor.GetImageView(), displayColorSampler);
+
+    if (!displayColorUITexture)
+    {
+        Destroy();
+        return false;
+    }
+
     VulkanLightingPassCreateInfo lightingInfo{};
     lightingInfo.device = device;
     lightingInfo.gBuffer = &gBufferPass.GetGBuffer();
@@ -195,6 +234,15 @@ void VulkanRenderer::Destroy()
 {
     if (device && device->GetDevice()) vkDeviceWaitIdle(device->GetDevice());
 
+    if (uiRenderer && displayColorUITexture) uiRenderer->UnregisterExternalTexture(displayColorUITexture);
+    displayColorUITexture = {};
+
+    if (device && device->GetDevice() && displayColorSampler) vkDestroySampler(device->GetDevice(), displayColorSampler, nullptr);
+    displayColorSampler = VK_NULL_HANDLE;
+
+    displayColor.Destroy();
+    displayColorLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
     uiPass.Destroy();
     postFXPass.Destroy();
 
@@ -242,6 +290,7 @@ void VulkanRenderer::Destroy()
 
     config = {};
     presentContext = nullptr;
+    uiRenderer = nullptr;
     device = nullptr;
 }
 
@@ -283,7 +332,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
 
     const bool suboptimal = acquireResult == VK_SUBOPTIMAL_KHR;
 
-    const VulkanImage& targetImage = swapchain.GetImages()[imageIndex];
+    const VulkanImage& swapchainImage = swapchain.GetImages()[imageIndex];
     const VkSemaphore renderFinished = renderFinishedSemaphores[imageIndex];
 
     if (vkResetCommandBuffer(cmdBuffer, 0) != VK_SUCCESS) return VulkanFrameResult::FAILED;
@@ -318,10 +367,10 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
 
     gBufferPass.Record(gBufferInfo);
 
-    VkImageLayout& targetLayout = swapchainImageLayouts[imageIndex];
+    VkImageLayout& swapchainLayout = swapchainImageLayouts[imageIndex];
 
-    const VkImageMemoryBarrier2 targetWriteBarrier = VulkanInitializers::ImageMemoryBarrier(
-        targetImage.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, targetLayout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    const VkImageMemoryBarrier2 swapchainWriteBarrier = VulkanInitializers::ImageMemoryBarrier(
+        swapchainImage.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, swapchainLayout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
         VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
     );
@@ -329,12 +378,12 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
     VkDependencyInfo dependencyInfo{};
     dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
     dependencyInfo.imageMemoryBarrierCount = 1;
-    dependencyInfo.pImageMemoryBarriers = &targetWriteBarrier;
+    dependencyInfo.pImageMemoryBarriers = &swapchainWriteBarrier;
     dependencyInfo.pNext = nullptr;
 
     vkCmdPipelineBarrier2(cmdBuffer, &dependencyInfo);
 
-    targetLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    swapchainLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     if (debugView == GraphicsDebugView::FINAL)
     {
@@ -413,7 +462,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
 
         VulkanPostFXPassRenderInfo postFXInfo{};
         postFXInfo.cmdBuffer = cmdBuffer;
-        postFXInfo.targetView = targetImage.GetImageView();
+        postFXInfo.targetView = swapchainImage.GetImageView();
         postFXInfo.extent = extent;
         postFXInfo.exposureEV = sceneData.exposureEV;
 
@@ -443,42 +492,42 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
 
         VulkanGBufferDebugPassRenderInfo gBufferDebugInfo{};
         gBufferDebugInfo.cmdBuffer = cmdBuffer;
-        gBufferDebugInfo.targetView = targetImage.GetImageView();
+        gBufferDebugInfo.targetView = swapchainImage.GetImageView();
         gBufferDebugInfo.extent = extent;
         gBufferDebugInfo.debugView = gBufferView;
 
         gBufferDebugPass.Record(gBufferDebugInfo);
     }
 
-    const VkImageMemoryBarrier2 targetUIBarrier = VulkanInitializers::ImageMemoryBarrier(
-        targetImage.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    const VkImageMemoryBarrier2 swapchainUIBarrier = VulkanInitializers::ImageMemoryBarrier(
+        swapchainImage.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
         VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
         VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
     );
 
-    dependencyInfo.pImageMemoryBarriers = &targetUIBarrier;
+    dependencyInfo.pImageMemoryBarriers = &swapchainUIBarrier;
 
     vkCmdPipelineBarrier2(cmdBuffer, &dependencyInfo);
 
     VulkanUIPassRenderInfo uiInfo{};
     uiInfo.cmdBuffer = cmdBuffer;
-    uiInfo.targetView = targetImage.GetImageView();
+    uiInfo.targetView = swapchainImage.GetImageView();
     uiInfo.extent = extent;
 
     uiPass.Record(uiInfo);
 
-    const VkImageMemoryBarrier2 toPresentBarrier = VulkanInitializers::ImageMemoryBarrier(
-        targetImage.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    const VkImageMemoryBarrier2 swapchainPresentBarrier = VulkanInitializers::ImageMemoryBarrier(
+        swapchainImage.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
         VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE
     );
 
-    dependencyInfo.pImageMemoryBarriers = &toPresentBarrier;
+    dependencyInfo.pImageMemoryBarriers = &swapchainPresentBarrier;
 
     vkCmdPipelineBarrier2(cmdBuffer, &dependencyInfo);
 
-    targetLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    swapchainLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
     if (vkEndCommandBuffer(cmdBuffer) != VK_SUCCESS) return VulkanFrameResult::FAILED;
 
