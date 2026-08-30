@@ -304,41 +304,36 @@ Do not replace this with manual include guards unless there is a real reason.
 
 ### Include order
 
-Keep includes in a predictable order so files are easier to scan and dependencies are easier to manage.
+Keep includes roughly grouped by where they come from so files stay easy to scan and dependency direction remains clear.
 
-The exact order is a MagnetaX project convention. It is mainly about keeping files readable and making dependency direction easier to see.
+As a general guideline, prefer this order:
 
-Use the following general order:
-
-1. MagnetaX Public/Internal headers using `<MX/...>`
-2. Cross-subsystem source/internal headers such as `<Graphics/...>`
-3. Same-folder headers using `"Foo.h"`
-4. Close relative headers such as `"../Foo.h"`
-5. Platform, API, and third-party headers
-6. Standard library headers
+1. Public/internal engine headers using `<MX/...>`
+2. Other local headers using paths such as `<Graphics/...>` or `<Input/...>`
+3. Local and relative headers such as `"Foo.h"` or `"../Bar.h"`
+4. Platform, API, and third-party library headers
+5. Standard library headers
 
 Example:
 
 ```cpp
 #include <MX/Core/CoreMinimal.h>
-#include <MX/Foo/FooConfig.h>
-#include <Graphics/FooRenderData.h>
-#include "Foo.h"
-#include "../Bar.h"
-#include <vulkan/vulkan.h>
-#include <vector>
-#include <memory>
-```
-
-Do not add empty lines between normal include groups.
-
-Conditional platform includes may naturally form their own block.
-
-```cpp
-#if MX_PLATFORM_WINDOWS
+#include <MX/Graphics/GraphicsSystemFactory.h>
+#include <MX/Graphics/GraphicsConfig.h>
+#include <MX/Core/Math/Vector.h>
+#include <MX/Scene/Scene.h>
+...
+#include <Graphics/Vulkan/Resources/VulkanTexture.h>
+#include <Graphics/Vulkan/VulkanDevice.h>
+...
+#include "VulkanRenderer.h"
+#include "../VulkanPass.h"
+...
 #include <Windows.h>
-#endif
-```
+#include <vulkan/vulkan.h>
+...
+#include <memory>
+#include <vector>
 
 ### CoreMinimal
 
