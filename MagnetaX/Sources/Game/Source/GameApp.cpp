@@ -87,12 +87,10 @@ struct GameApp::GameAppImpl
 
         gameModule->OnInit();
 
-        // Render one black frame before game starts
-        graphicsSystem->RenderScene(nullptr, assetManager.get(), UIAccess::GetRenderData(ui));
-
         gameInitialized = true;
 
         clock.Reset();
+
         gameWindow->SetVisibility(true);
 
         return true;
