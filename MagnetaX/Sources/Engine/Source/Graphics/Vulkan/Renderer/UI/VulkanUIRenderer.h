@@ -29,6 +29,9 @@ public:
     VkDescriptorSetLayout GetTextureDescriptorSetLayout() const { return textureDescSetLayout; }
     VkDescriptorSet GetTextureDescriptorSet(UITextureHandle texture) const;
 
+    UITextureHandle RegisterExternalTexture(VkImageView imageView, VkSampler sampler);
+    void UnregisterExternalTexture(UITextureHandle texture);
+
 private:
     struct TextureEntry
     {

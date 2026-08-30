@@ -132,7 +132,7 @@ bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
     VulkanImageCreateInfo displayColorInfo{};
     displayColorInfo.device = device;
     displayColorInfo.extent = extent;
-    displayColorInfo.format = ImageFormat::RGBA8_SRGB;
+    displayColorInfo.format = VulkanImageFormat::ToImageFormat(swapchainFormat);
     displayColorInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 
     if (!displayColor.Create(displayColorInfo))
@@ -305,6 +305,17 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
     const std::span<const VulkanDrawItem> drawItems = frameInfo.drawItems;
     const VulkanEnvironmentRenderData& env = frameInfo.environment;
 
+    bool displayColorUsedByUI = false;
+
+    for (const UIDrawCommand& command : uiRenderer->GetDrawData().commands)
+    {
+        if (command.texture.id == displayColorUITexture.id)
+        {
+            displayColorUsedByUI = true;
+            break;
+        }
+    }
+
     const VkDevice buffDevice = device->GetDevice();
     if (!buffDevice) return VulkanFrameResult::FAILED;
 
@@ -369,21 +380,31 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
 
     VkImageLayout& swapchainLayout = swapchainImageLayouts[imageIndex];
 
-    const VkImageMemoryBarrier2 swapchainWriteBarrier = VulkanInitializers::ImageMemoryBarrier(
-        swapchainImage.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, swapchainLayout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
-    );
+    const VulkanImage& displayTarget = displayColorUsedByUI ? displayColor : swapchainImage;
+    VkImageLayout& displayTargetLayout = displayColorUsedByUI ? displayColorLayout : swapchainLayout;
+
+    VkPipelineStageFlags2 displayTargetSrcStage = VK_PIPELINE_STAGE_2_NONE;
+    VkAccessFlags2 displayTargetSrcAccess = VK_ACCESS_2_NONE;
+
+    if (displayTargetLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+    {
+        displayTargetSrcStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        displayTargetSrcAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+    }
+
+    const VkImageMemoryBarrier2 displayTargetWriteBarrier = VulkanInitializers::ImageMemoryBarrier(displayTarget.GetImage(),
+        VK_IMAGE_ASPECT_COLOR_BIT, displayTargetLayout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, displayTargetSrcStage,
+        displayTargetSrcAccess, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
 
     VkDependencyInfo dependencyInfo{};
     dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
     dependencyInfo.imageMemoryBarrierCount = 1;
-    dependencyInfo.pImageMemoryBarriers = &swapchainWriteBarrier;
+    dependencyInfo.pImageMemoryBarriers = &displayTargetWriteBarrier;
     dependencyInfo.pNext = nullptr;
 
     vkCmdPipelineBarrier2(cmdBuffer, &dependencyInfo);
 
-    swapchainLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    displayTargetLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     if (debugView == GraphicsDebugView::FINAL)
     {
@@ -399,8 +420,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
         const VkImageMemoryBarrier2 sceneColorWriteBarrier = VulkanInitializers::ImageMemoryBarrier(
             sceneColor.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, sceneColorLayout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             sceneColorSrcStage, sceneColorSrcAccess, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
-        );
+            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
 
         dependencyInfo.pImageMemoryBarriers = &sceneColorWriteBarrier;
 
@@ -429,8 +449,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
                 sceneColor.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
                 VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
-            );
+                VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
 
             dependencyInfo.pImageMemoryBarriers = &sceneColorSkyBarrier;
 
@@ -451,8 +470,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
             sceneColor.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
             VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-            VK_ACCESS_2_SHADER_SAMPLED_READ_BIT
-        );
+            VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
 
         dependencyInfo.pImageMemoryBarriers = &sceneColorReadBarrier;
 
@@ -462,7 +480,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
 
         VulkanPostFXPassRenderInfo postFXInfo{};
         postFXInfo.cmdBuffer = cmdBuffer;
-        postFXInfo.targetView = swapchainImage.GetImageView();
+        postFXInfo.targetView = displayTarget.GetImageView();
         postFXInfo.extent = extent;
         postFXInfo.exposureEV = sceneData.exposureEV;
 
@@ -492,36 +510,60 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
 
         VulkanGBufferDebugPassRenderInfo gBufferDebugInfo{};
         gBufferDebugInfo.cmdBuffer = cmdBuffer;
-        gBufferDebugInfo.targetView = swapchainImage.GetImageView();
+        gBufferDebugInfo.targetView = displayTarget.GetImageView();
         gBufferDebugInfo.extent = extent;
         gBufferDebugInfo.debugView = gBufferView;
 
         gBufferDebugPass.Record(gBufferDebugInfo);
     }
 
-    const VkImageMemoryBarrier2 swapchainUIBarrier = VulkanInitializers::ImageMemoryBarrier(
-        swapchainImage.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-        VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
-    );
+    if (displayColorUsedByUI)
+    {
+        const VkImageMemoryBarrier2 displayColorReadBarrier = VulkanInitializers::ImageMemoryBarrier(displayColor.GetImage(),
+            VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+            VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
 
-    dependencyInfo.pImageMemoryBarriers = &swapchainUIBarrier;
+        dependencyInfo.pImageMemoryBarriers = &displayColorReadBarrier;
 
-    vkCmdPipelineBarrier2(cmdBuffer, &dependencyInfo);
+        vkCmdPipelineBarrier2(cmdBuffer, &dependencyInfo);
+
+        displayColorLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        const VkImageMemoryBarrier2 swapchainUIWriteBarrier = VulkanInitializers::ImageMemoryBarrier(swapchainImage.GetImage(),
+            VK_IMAGE_ASPECT_COLOR_BIT, swapchainLayout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+
+        dependencyInfo.pImageMemoryBarriers = &swapchainUIWriteBarrier;
+
+        vkCmdPipelineBarrier2(cmdBuffer, &dependencyInfo);
+
+        swapchainLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    }
+    else
+    {
+        const VkImageMemoryBarrier2 swapchainUIBarrier = VulkanInitializers::ImageMemoryBarrier(swapchainImage.GetImage(),
+            VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+
+        dependencyInfo.pImageMemoryBarriers = &swapchainUIBarrier;
+
+        vkCmdPipelineBarrier2(cmdBuffer, &dependencyInfo);
+    }
 
     VulkanUIPassRenderInfo uiInfo{};
     uiInfo.cmdBuffer = cmdBuffer;
     uiInfo.targetView = swapchainImage.GetImageView();
     uiInfo.extent = extent;
+    uiInfo.clearTarget = displayColorUsedByUI;
 
     uiPass.Record(uiInfo);
 
     const VkImageMemoryBarrier2 swapchainPresentBarrier = VulkanInitializers::ImageMemoryBarrier(
         swapchainImage.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE
-    );
+        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
 
     dependencyInfo.pImageMemoryBarriers = &swapchainPresentBarrier;
 

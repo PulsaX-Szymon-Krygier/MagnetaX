@@ -19,6 +19,8 @@ struct VulkanUIPassRenderInfo : VulkanPassRenderInfo
 {
     VkImageView targetView = VK_NULL_HANDLE;
     VkExtent2D extent{};
+
+    bool clearTarget = false;
 };
 
 class VulkanUIPass

@@ -168,4 +168,56 @@ VkDescriptorSet VulkanUIRenderer::GetTextureDescriptorSet(UITextureHandle textur
 
     return it->second.descSet;
 }
+
+UITextureHandle VulkanUIRenderer::RegisterExternalTexture(VkImageView imageView, VkSampler sampler)
+{
+    if (!device || !device->GetDevice()) return {};
+    if (!imageView || !sampler || !textureDescPool || !textureDescSetLayout) return {};
+    if (nextTextureID == 0) return {};
+
+    VkDescriptorSet descSet = VK_NULL_HANDLE;
+
+    const VkDescriptorSetAllocateInfo allocInfo = VulkanInitializers::DescriptorSetAllocateInfo(textureDescPool, 1, &textureDescSetLayout);
+
+    if (vkAllocateDescriptorSets(device->GetDevice(), &allocInfo, &descSet) != VK_SUCCESS) return {};
+
+    VkDescriptorImageInfo imageInfo{};
+    imageInfo.sampler = sampler;
+    imageInfo.imageView = imageView;
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkWriteDescriptorSet writeSet{};
+    writeSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writeSet.dstSet = descSet;
+    writeSet.dstBinding = 0;
+    writeSet.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writeSet.descriptorCount = 1;
+    writeSet.pImageInfo = &imageInfo;
+
+    vkUpdateDescriptorSets(device->GetDevice(), 1, &writeSet, 0, nullptr);
+
+    const uint64 id = nextTextureID++;
+
+    TextureEntry entry{};
+    entry.descSet = descSet;
+
+    textures.emplace(id, std::move(entry));
+
+    return UITextureHandle{ id };
+}
+
+void VulkanUIRenderer::UnregisterExternalTexture(UITextureHandle texture)
+{
+    if (!texture || !device || !device->GetDevice()) return;
+
+    const auto it = textures.find(texture.id);
+    if (it == textures.end()) return;
+    if (it->second.texture) return;
+
+    vkDeviceWaitIdle(device->GetDevice());
+
+    if (it->second.descSet && textureDescPool) vkFreeDescriptorSets(device->GetDevice(), textureDescPool, 1, &it->second.descSet);
+
+    textures.erase(it);
+}
 #endif
