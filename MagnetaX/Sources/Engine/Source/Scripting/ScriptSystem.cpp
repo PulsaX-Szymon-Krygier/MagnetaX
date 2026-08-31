@@ -10,7 +10,9 @@ void ScriptSystem::Update(Scene& scene, EngineContext& engineContext, float64 de
     scene.ForEach<ScriptComponent>(
         [&](Entity entity, ScriptComponent& scriptComponent)
         {
-            for (usize i = 0; i < scriptComponent.scripts.size(); ++i)
+            const usize scriptCount = scriptComponent.scripts.size();
+
+            for (usize i = 0; i < scriptCount; ++i)
             {
                 ScriptComponent* currentComponent = entity.GetComponent<ScriptComponent>();
                 if (!currentComponent || i >= currentComponent->scripts.size()) break;
