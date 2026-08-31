@@ -374,7 +374,14 @@ void VulkanGraphicsSystem::UpdateEnvironment(AssetHandle<TextureAsset> environme
         }
     }
 
-    if (!ready) environment.ClearSource();
+    if (!ready)
+    {
+        environment.ClearSource();
+
+        if (!environmentMap) environmentMapAssetID = assetID;
+
+        return;
+    }
 
     environmentMapAssetID = assetID;
 }
