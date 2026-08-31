@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Check.h"
 #include "IO/IOUtils.h"
 #include "Math/Math.h"
 #include "Time/Clock.h"
