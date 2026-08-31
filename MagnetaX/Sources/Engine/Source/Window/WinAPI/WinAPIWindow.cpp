@@ -55,6 +55,12 @@ void WinAPIWindow::SetState(const WindowState& state)
 {
     if (!hWnd) return;
 
+    if (!config.visible)
+    {
+        config.state = state;
+        return;
+    }
+
     int32 cmdShow = SW_RESTORE;
 
     if (state == WindowState::MINIMIZED) cmdShow = SW_MINIMIZE;
@@ -69,14 +75,17 @@ void WinAPIWindow::SetVisibility(bool visible)
 
     if (visible)
     {
-        const BOOL minimized = IsIconic(hWnd);
-        const BOOL maximized = IsZoomed(hWnd);
+        int32 cmdShow = SW_RESTORE;
 
-        if (maximized) ShowWindow(hWnd, SW_SHOWMAXIMIZED);
-        else if (minimized) ShowWindow(hWnd, SW_RESTORE);
-        else ShowWindow(hWnd, SW_SHOW);
+        if (config.state == WindowState::MINIMIZED) cmdShow = SW_SHOWMINIMIZED;
+        else if (config.state == WindowState::MAXIMIZED) cmdShow = SW_SHOWMAXIMIZED;
+
+        ShowWindow(hWnd, cmdShow);
     }
-    else ShowWindow(hWnd, SW_HIDE);
+    else
+    {
+        ShowWindow(hWnd, SW_HIDE);
+    }
 
     UpdateWindow(hWnd);
 
@@ -148,6 +157,8 @@ bool WinAPIWindow::Create(const WindowConfig& createInfo)
 
     // Complete and save configuration
     config = createInfo;
+    config.visible = false;
+
     SetVisibility(createInfo.visible);
 
     return true;

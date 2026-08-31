@@ -72,29 +72,11 @@ bool X11Window::Create(const WindowConfig& createInfo)
     config = createInfo;
     config.size = size;
     config.visible = false;
-    config.state = WindowState::NORMAL;
 
     SetResizable(createInfo.resizable);
     SetTitle(createInfo.title);
 
-    if (createInfo.visible)
-    {
-        if (createInfo.state == WindowState::MAXIMIZED)
-        {
-            Atom states[] =
-            {
-                (Atom)netWMStateMaximizedHorzAtom,
-                (Atom)netWMStateMaximizedVertAtom
-            };
-
-            XChangeProperty(display, window, (Atom)netWMStateAtom, XA_ATOM, 32, PropModeReplace,
-                reinterpret_cast<const unsigned char*>(states), 2);
-        }
-
-        SetVisibility(true);
-
-        if (createInfo.state == WindowState::MINIMIZED) SetState(WindowState::MINIMIZED);
-    }
+    if (createInfo.visible) SetVisibility(true);
 
     return true;
 }
@@ -150,17 +132,23 @@ void X11Window::SetState(const WindowState& state)
     Display* display = AsDisplay(xDisplay);
     if (!display || !xWindow) return;
 
+    if (!config.visible)
+    {
+        config.state = state;
+        return;
+    }
+
     switch (state)
     {
     case WindowState::MINIMIZED:
     {
-        if (config.visible) XIconifyWindow(display, (Window)xWindow, DefaultScreen(display));
+        XIconifyWindow(display, (Window)xWindow, DefaultScreen(display));
 
         break;
     }
     case WindowState::MAXIMIZED:
     {
-        if (config.visible) XMapWindow(display, (Window)xWindow);
+        XMapWindow(display, (Window)xWindow);
         SendNetWMState(1, netWMStateMaximizedHorzAtom, netWMStateMaximizedVertAtom);
 
         break;
@@ -168,7 +156,7 @@ void X11Window::SetState(const WindowState& state)
     case WindowState::NORMAL:
     {
         SendNetWMState(0, netWMStateMaximizedHorzAtom, netWMStateMaximizedVertAtom);
-        if (config.visible) XMapWindow(display, (Window)xWindow);
+        XMapWindow(display, (Window)xWindow);
 
         break;
     }
@@ -181,13 +169,50 @@ void X11Window::SetVisibility(bool visible)
 {
     Display* display = AsDisplay(xDisplay);
     if (!display || !xWindow) return;
+    if (visible == config.visible) return;
 
-    if (visible) XMapWindow(display, (Window)xWindow);
-    else XUnmapWindow(display, (Window)xWindow);
+    if (visible)
+    {
+        const WindowState state = config.state;
+
+        XWMHints* hints = XGetWMHints(display, (Window)xWindow);
+        XWMHints defaultHints{};
+        XWMHints* stateHints = hints ? hints : &defaultHints;
+
+        stateHints->flags |= StateHint;
+        stateHints->initial_state = state == WindowState::MINIMIZED ? IconicState : NormalState;
+
+        XSetWMHints(display, (Window)xWindow, stateHints);
+
+        if (hints) XFree(hints);
+
+        if (state == WindowState::MAXIMIZED)
+        {
+            Atom states[] =
+            {
+                (Atom)netWMStateMaximizedHorzAtom,
+                (Atom)netWMStateMaximizedVertAtom
+            };
+
+            XChangeProperty(display, (Window)xWindow, (Atom)netWMStateAtom, XA_ATOM, 32, PropModeReplace, reinterpret_cast<const unsigned char*>(states), 2);
+        }
+        else
+        {
+            XDeleteProperty(display, (Window)xWindow, (Atom)netWMStateAtom);
+        }
+
+        XMapWindow(display, (Window)xWindow);
+
+        config.visible = true;
+        SetState(state);
+    }
+    else
+    {
+        XUnmapWindow(display, (Window)xWindow);
+        config.visible = false;
+    }
 
     XFlush(display);
-
-    config.visible = visible;
 }
 
 void X11Window::SetResizable(bool resizable)
@@ -302,6 +327,7 @@ void X11Window::UpdateWindowState()
 {
     Display* display = AsDisplay(xDisplay);
     if (!display || !xWindow) return;
+    if (!config.visible) return;
 
     Atom actualType{};
     int actualFormat = 0;

@@ -135,16 +135,11 @@ bool CocoaWindow::Create(const WindowConfig& createInfo)
 
     config = createInfo;
     config.visible = false;
-    config.state = WindowState::NORMAL;
 
     SetResizable(createInfo.resizable);
     SetTitle(createInfo.title);
 
-    if (createInfo.visible)
-    {
-        SetVisibility(true);
-        SetState(createInfo.state);
-    }
+    if (createInfo.visible) SetVisibility(true);
 
     _impl->focused = [_impl->window isKeyWindow];
 
@@ -196,6 +191,12 @@ void CocoaWindow::SetState(const WindowState& state)
 {
     if (!_impl || !_impl->window) return;
 
+    if (!config.visible)
+    {
+        config.state = state;
+        return;
+    }
+
     switch (state)
     {
     case WindowState::MINIMIZED:
@@ -225,6 +226,8 @@ void CocoaWindow::SetVisibility(bool visible)
 {
     if (!_impl || !_impl->window) return;
 
+    const WindowState state = config.state;
+
     if (visible)
     {
         [_impl->window makeKeyAndOrderFront:nil];
@@ -235,7 +238,9 @@ void CocoaWindow::SetVisibility(bool visible)
         [_impl->window orderOut:nil];
     }
 
-    config.visible = [_impl->window isVisible];
+    config.visible = visible;
+
+    if (visible) SetState(state);
 }
 
 void CocoaWindow::SetResizable(bool resizable)
@@ -279,16 +284,20 @@ void CocoaWindow::PollEvents()
     const NSSize contentSize = _impl->view.bounds.size;
     const Size2i newSize(static_cast<int32>(std::lround(contentSize.width)), static_cast<int32>(std::lround(contentSize.height)));
 
-    WindowState newState = WindowState::NORMAL;
+    WindowState newState = config.state;
 
-    if ([_impl->window isMiniaturized]) newState = WindowState::MINIMIZED;
-    else if ([_impl->window isZoomed]) newState = WindowState::MAXIMIZED;
+    if (config.visible)
+    {
+        newState = WindowState::NORMAL;
+
+        if ([_impl->window isMiniaturized]) newState = WindowState::MINIMIZED;
+        else if ([_impl->window isZoomed]) newState = WindowState::MAXIMIZED;
+    }
 
     const bool focused = [_impl->window isKeyWindow];
 
     config.size = newSize;
     config.state = newState;
-    config.visible = [_impl->window isVisible];
     _impl->focused = focused;
 
     UpdateMetalLayer(_impl->window, _impl->view, _impl->metalLayer);
