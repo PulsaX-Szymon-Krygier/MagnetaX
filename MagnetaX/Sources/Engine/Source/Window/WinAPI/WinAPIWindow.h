@@ -45,6 +45,4 @@ private:
 
     static LRESULT CALLBACK StaticWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
     LRESULT WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-
-    void DispatchEvent(WindowEventType type);
 };

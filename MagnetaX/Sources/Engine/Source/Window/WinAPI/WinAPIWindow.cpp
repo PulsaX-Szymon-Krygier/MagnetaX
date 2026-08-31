@@ -183,18 +183,6 @@ NativeWindowHandle WinAPIWindow::GetNativeHandle() const
     return nativeHandle;
 }
 
-void WinAPIWindow::DispatchEvent(WindowEventType type)
-{
-    WindowEvent event{};
-    event.eventType = type;
-    event.windowConfig = config;
-
-    for (const auto& subscriber : subscribers)
-    {
-        if (subscriber.callback) subscriber.callback(event, subscriber.user);
-    }
-}
-
 LRESULT CALLBACK WinAPIWindow::StaticWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     WinAPIWindow* window = nullptr;

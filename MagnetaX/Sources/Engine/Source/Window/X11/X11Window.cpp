@@ -276,18 +276,6 @@ NativeWindowHandle X11Window::GetNativeHandle() const
     return handle;
 }
 
-void X11Window::DispatchEvent(WindowEventType type)
-{
-    WindowEvent event{};
-    event.eventType = type;
-    event.windowConfig = config;
-
-    for (const Subscriber& subscriber : subscribers)
-    {
-        if (subscriber.callback) subscriber.callback(event, subscriber.user);
-    }
-}
-
 void X11Window::SendNetWMState(int32 action, uint64 firstState, uint64 secondState)
 {
     Display* display = AsDisplay(xDisplay);

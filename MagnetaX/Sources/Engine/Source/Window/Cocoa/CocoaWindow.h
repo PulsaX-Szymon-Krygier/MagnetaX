@@ -38,6 +38,4 @@ public:
 private:
     struct CocoaWindowImpl;
     std::unique_ptr<CocoaWindowImpl> _impl;
-
-    void DispatchEvent(WindowEventType type);
 };

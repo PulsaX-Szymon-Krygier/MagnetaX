@@ -7,7 +7,6 @@
 #include "SurfaceHost.h"
 #include <vector>
 
-// Forward declaration
 class InputFeed;
 
 class AbstractWindow : public IWindow, public SurfaceHost
@@ -80,4 +79,31 @@ protected:
     std::vector<Subscriber> subscribers;
 
     InputFeed* inputFeed = nullptr;
+
+    void DispatchEvent(WindowEventType type)
+    {
+        WindowEvent event{};
+        event.eventType = type;
+        event.windowConfig = config;
+
+        std::vector<uint32> tokens;
+        tokens.reserve(subscribers.size());
+
+        for (const Subscriber& subscriber : subscribers) tokens.push_back(subscriber.token);
+
+        for (uint32 token : tokens)
+        {
+            for (const Subscriber& subscriber : subscribers)
+            {
+                if (subscriber.token != token) continue;
+
+                const WindowEventCallback callback = subscriber.callback;
+                void* user = subscriber.user;
+
+                if (callback) callback(event, user);
+
+                break;
+            }
+        }
+    }
 };

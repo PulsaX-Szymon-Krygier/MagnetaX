@@ -332,16 +332,4 @@ Size2i CocoaWindow::GetSurfaceSize() const
 
     return Size2i(static_cast<int32>(std::lround(drawableSize.width)), static_cast<int32>(std::lround(drawableSize.height)));
 }
-
-void CocoaWindow::DispatchEvent(WindowEventType type)
-{
-    WindowEvent event{};
-    event.eventType = type;
-    event.windowConfig = config;
-
-    for (const Subscriber& subscriber : subscribers)
-    {
-        if (subscriber.callback) subscriber.callback(event, subscriber.user);
-    }
-}
 #endif

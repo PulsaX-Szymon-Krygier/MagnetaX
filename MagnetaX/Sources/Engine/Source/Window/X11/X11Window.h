@@ -42,8 +42,6 @@ private:
     uint64 netWMStateMaximizedVertAtom = 0;
     uint64 netWMStateHiddenAtom = 0;
 
-    void DispatchEvent(WindowEventType type);
-
     void SendNetWMState(int32 action, uint64 firstState, uint64 secondState = 0);
     void UpdateWindowState();
 };
