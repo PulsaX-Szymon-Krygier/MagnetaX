@@ -18,6 +18,8 @@ public:
 
     void AddMouseWheel(int32 delta) override;
 
+    void Reset() override;
+
 private:
     /* Input */
     const KeyboardState& GetKeyboardState() const override { return keyboardState; }

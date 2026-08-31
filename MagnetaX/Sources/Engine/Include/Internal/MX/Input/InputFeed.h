@@ -16,4 +16,6 @@ public:
     virtual void SetMousePosition(int32 x, int32 y) = 0;
 
     virtual void AddMouseWheel(int32 delta) = 0;
+
+    virtual void Reset() = 0;
 };

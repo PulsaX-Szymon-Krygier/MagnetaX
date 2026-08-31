@@ -65,3 +65,10 @@ void InputSystem::AddMouseWheel(int32 delta)
 {
     mouseState.wheelDelta += delta;
 }
+
+void InputSystem::Reset()
+{
+    keyboardState = {};
+    mouseState = {};
+    mouseInitialized = false;
+}

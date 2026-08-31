@@ -4,10 +4,9 @@
 
 #include <MX/Core/CoreMinimal.h>
 #include <MX/Window/IWindow.h>
+#include <MX/Input/InputFeed.h>
 #include "SurfaceHost.h"
 #include <vector>
-
-class InputFeed;
 
 class AbstractWindow : public IWindow, public SurfaceHost
 {
@@ -82,6 +81,8 @@ protected:
 
     void DispatchEvent(WindowEventType type)
     {
+        if (type == WindowEventType::FOCUS_LOST && inputFeed) inputFeed->Reset();
+
         WindowEvent event{};
         event.eventType = type;
         event.windowConfig = config;
