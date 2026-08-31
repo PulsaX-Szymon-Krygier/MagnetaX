@@ -36,3 +36,7 @@
 #if !defined(MX_PLATFORM_UNKNOWN)
     #define MX_PLATFORM_UNKNOWN 0
 #endif
+
+#if !defined(MX_DEBUG)
+    #define MX_DEBUG 0
+#endif

@@ -61,6 +61,12 @@ endif()
 # Add third party dependencies
 include("ThirdParty.cmake")
 
+# Add build flag
+add_compile_definitions(
+  $<$<CONFIG:Debug>:MX_DEBUG=1>
+  $<$<NOT:$<CONFIG:Debug>>:MX_DEBUG=0>
+)
+
 # Add engine
 add_subdirectory("${MXB_DIR_SOURCES}/Engine" Engine)
 
