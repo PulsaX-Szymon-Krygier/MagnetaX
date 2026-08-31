@@ -55,6 +55,11 @@ namespace
         std::unordered_map<OBJVertexKey, uint32, OBJVertexKeyHash> vertexMap;
         vertexMap.reserve(indexCount);
 
+        std::vector<uint8> normalPresent;
+        normalPresent.reserve(indexCount);
+
+        bool hasMissingNormals = false;
+
         for (const tinyobj::shape_t& shape : shapes)
         {
             for (const tinyobj::index_t& objIndex : shape.mesh.indices)
@@ -78,6 +83,8 @@ namespace
                 vertex.position = Vector3f(attributes.vertices[positionOffset], attributes.vertices[positionOffset + 1],
                     attributes.vertices[positionOffset + 2]);
 
+                bool hasNormal = false;
+
                 if (objIndex.normal_index >= 0)
                 {
                     const usize normalOffset = static_cast<usize>(objIndex.normal_index) * 3;
@@ -86,6 +93,8 @@ namespace
                     {
                         vertex.normal = Vector3f(attributes.normals[normalOffset], attributes.normals[normalOffset + 1],
                             attributes.normals[normalOffset + 2]);
+
+                        hasNormal = true;
                     }
                 }
 
@@ -95,7 +104,6 @@ namespace
 
                     if (texcoordOffset + 1 < attributes.texcoords.size())
                     {
-                        //vertex.uv = Vector2f(attributes.texcoords[texcoordOffset], attributes.texcoords[texcoordOffset + 1]);
                         vertex.uv = Vector2f(attributes.texcoords[texcoordOffset], 1.0f - attributes.texcoords[texcoordOffset + 1]);
                     }
                 }
@@ -103,6 +111,10 @@ namespace
                 const uint32 vertexIndex = static_cast<uint32>(vertices.size());
 
                 vertices.push_back(vertex);
+                normalPresent.push_back(hasNormal);
+
+                if (!hasNormal) hasMissingNormals = true;
+
                 indices.push_back(vertexIndex);
 
                 vertexMap.emplace(key, vertexIndex);
@@ -118,26 +130,32 @@ namespace
             }
         }
 
-        // Generate normals if .obj does not have them
-        // But verify this method later
-        if (attributes.normals.empty())
+        // Generate missing normals
+        if (hasMissingNormals)
         {
             for (usize i = 0; i + 2 < indices.size(); i += 3)
             {
-                MeshVertex& vert0 = vertices[indices[i]];
-                MeshVertex& vert1 = vertices[indices[i + 1]];
-                MeshVertex& vert2 = vertices[indices[i + 2]];
+                const uint32 index0 = indices[i];
+                const uint32 index1 = indices[i + 1];
+                const uint32 index2 = indices[i + 2];
+
+                MeshVertex& vert0 = vertices[index0];
+                MeshVertex& vert1 = vertices[index1];
+                MeshVertex& vert2 = vertices[index2];
 
                 const Vector3f edge1 = vert1.position - vert0.position;
                 const Vector3f edge2 = vert2.position - vert0.position;
                 const Vector3f faceNormal = Vector3f::Cross(edge1, edge2);
 
-                vert0.normal += faceNormal;
-                vert1.normal += faceNormal;
-                vert2.normal += faceNormal;
+                if (!normalPresent[index0]) vert0.normal += faceNormal;
+                if (!normalPresent[index1]) vert1.normal += faceNormal;
+                if (!normalPresent[index2]) vert2.normal += faceNormal;
             }
 
-            for (MeshVertex& vertex : vertices) vertex.normal.Normalize();
+            for (usize i = 0; i < vertices.size(); ++i)
+            {
+                if (!normalPresent[i]) vertices[i].normal.Normalize();
+            }
         }
 
         return true;
