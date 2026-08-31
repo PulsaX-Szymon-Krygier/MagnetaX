@@ -3,7 +3,7 @@
 #pragma once
 
 #include <MX/Core/CoreMinimal.h>
-#include <cassert>
+#include <MX/Core/Check.h>
 #include <limits>
 #include <vector>
 
@@ -13,7 +13,7 @@ class SparseSet
 public:
     usize Insert(Key key)
     {
-        assert(!Has(key));
+        MX_CHECK(!Has(key), "Cannot insert duplicate key into SparseSet");
 
         const usize sparseIndex = static_cast<usize>(key);
 

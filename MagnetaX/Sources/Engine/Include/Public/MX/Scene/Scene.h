@@ -3,6 +3,7 @@
 #pragma once
 
 #include <MX/Core/Math/Matrix.h>
+#include <MX/Core/Check.h>
 #include "Entity.h"
 #include "SceneEnvironment.h"
 #include <memory>
@@ -10,7 +11,6 @@
 #include <new>
 #include <string_view>
 #include <vector>
-#include <cassert>
 
 class Scene
 {
@@ -137,9 +137,8 @@ private:
 template<ComponentType T, typename... Args>
 T& Entity::AddComponent(Args&&... args)
 {
-    assert(scene);
-    assert(id != MX_INVALID_ENTITY);
-    assert(!scene->HasComponent<T>(id));
+    MX_CHECK(scene && id != MX_INVALID_ENTITY, "Cannot add component to invalid Entity");
+    MX_CHECK(!scene->HasComponent<T>(id), "Entity already has component of tihs type");
 
     return scene->AddComponent<T>(id, std::forward<Args>(args)...);
 }
@@ -147,8 +146,7 @@ T& Entity::AddComponent(Args&&... args)
 template<ComponentType T, typename... Args>
 T& Entity::GetOrAddComponent(Args&&... args)
 {
-    assert(scene);
-    assert(id != MX_INVALID_ENTITY);
+    MX_CHECK(scene && id != MX_INVALID_ENTITY, "Cannot add component to invalid Entity");
 
     if (T* component = scene->GetComponent<T>(id)) return *component;
 
