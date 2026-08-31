@@ -10,6 +10,7 @@
 #include <new>
 #include <string_view>
 #include <vector>
+#include <cassert>
 
 class Scene
 {
@@ -136,6 +137,21 @@ private:
 template<ComponentType T, typename... Args>
 T& Entity::AddComponent(Args&&... args)
 {
+    assert(scene);
+    assert(id != MX_INVALID_ENTITY);
+    assert(!scene->HasComponent<T>(id));
+
+    return scene->AddComponent<T>(id, std::forward<Args>(args)...);
+}
+
+template<ComponentType T, typename... Args>
+T& Entity::GetOrAddComponent(Args&&... args)
+{
+    assert(scene);
+    assert(id != MX_INVALID_ENTITY);
+
+    if (T* component = scene->GetComponent<T>(id)) return *component;
+
     return scene->AddComponent<T>(id, std::forward<Args>(args)...);
 }
 

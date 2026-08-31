@@ -19,6 +19,9 @@ public:
     template<ComponentType T, typename... Args>
     T& AddComponent(Args&&... args);
 
+    template<ComponentType T, typename... Args>
+    T& GetOrAddComponent(Args&&... args);
+
     template<ComponentType T>
     T* GetComponent();
 
