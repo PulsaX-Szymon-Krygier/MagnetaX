@@ -36,6 +36,22 @@ public:
 
     Matrix4f GetWorldMatrix(Entity entity) const;
 
+    template<ComponentType... T>
+        requires (sizeof...(T) > 0)
+    std::vector<Entity> GetEntitiesWith()
+    {
+        std::vector<Entity> entities;
+
+        ForEach<T...>(
+            [&](Entity entity, T&...)
+            {
+                entities.push_back(entity);
+            }
+        );
+
+        return entities;
+    }
+
     template<ComponentType... T, typename Fn>
         requires (sizeof...(T) > 0)
     void ForEach(Fn&& callback)
