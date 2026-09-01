@@ -30,6 +30,8 @@ public:
     void* ComponentAt(usize index) { return data + index * componentSize; }
 
 private:
+    friend class Scene;
+
     usize componentSize;
     usize componentAlign;
 
@@ -41,5 +43,10 @@ private:
     std::byte* data = nullptr;
     usize capacity = 0;
 
+    usize iterDepth = 0;
+
     void Grow();
+
+    void BeginIter();
+    void EndIter();
 };

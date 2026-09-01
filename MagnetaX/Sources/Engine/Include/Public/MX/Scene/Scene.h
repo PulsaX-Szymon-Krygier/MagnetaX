@@ -82,6 +82,8 @@ public:
 
         for (usize i = 0; i < smallestSize; ++i) entityIDs.push_back(GetComponentPoolEntityAt(smallestTypeID, i));
 
+        ComponentIterScope iterScope(*this, typeIDs, componentCount);
+
         for (uint32 entityID : entityIDs)
         {
             if ((HasComponent<T>(entityID) && ...)) callback(Entity(entityID, this), *GetComponent<T>(entityID)...);
@@ -89,6 +91,29 @@ public:
     }
 
 private:
+    class ComponentIterScope
+    {
+    public:
+        ComponentIterScope(Scene& _scene, const void* const* _typeIDs, usize _count)
+            : scene(_scene), typeIDs(_typeIDs), count(_count)
+        {
+            for (usize i = 0; i < count; ++i) scene.BeginComponentPoolIter(typeIDs[i]);
+        }
+
+        ComponentIterScope(const ComponentIterScope&) = delete;
+        ComponentIterScope& operator=(const ComponentIterScope&) = delete;
+
+        ~ComponentIterScope()
+        {
+            for (usize i = 0; i < count; ++i) scene.EndComponentPoolIter(typeIDs[i]);
+        }
+
+    private:
+        Scene& scene;
+        const void* const* typeIDs;
+        usize count;
+    };
+
     class SceneImpl;
     std::unique_ptr<SceneImpl> _impl;
 
@@ -107,6 +132,9 @@ private:
 
     usize GetComponentPoolSize(const void* typeID) const;
     uint32 GetComponentPoolEntityAt(const void* typeID, usize index) const;
+
+    void BeginComponentPoolIter(const void* typeID);
+    void EndComponentPoolIter(const void* typeID);
 
     bool SetParent(Entity child, Entity parent);
     Entity GetParent(Entity entity);

@@ -206,6 +206,24 @@ uint32 Scene::GetComponentPoolEntityAt(const void* typeID, usize index) const
     return _impl->GetComponentPoolEntityAt(typeID, index);
 }
 
+void Scene::BeginComponentPoolIter(const void* typeID)
+{
+    ComponentPool* pool = _impl->FindComponentPool(typeID);
+
+    MX_CHECK(pool, "Cannot begin iteration for missing ComponentPool");
+
+    pool->BeginIter();
+}
+
+void Scene::EndComponentPoolIter(const void* typeID)
+{
+    ComponentPool* pool = _impl->FindComponentPool(typeID);
+
+    MX_CHECK(pool, "Cannot end iteration for missing ComponentPool");
+
+    pool->EndIter();
+}
+
 bool Scene::SetParent(Entity child, Entity parent)
 {
     if (child.scene != this || parent.scene != this) return false;

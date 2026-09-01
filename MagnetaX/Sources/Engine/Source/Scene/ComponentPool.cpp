@@ -1,6 +1,7 @@
 // Copyright (c) 2026 PulsaX Szymon Krygier
 // SPDX-License-Identifier: MPL-2.0
 #include "ComponentPool.h"
+#include <MX/Core/Check.h>
 #include <new>
 
 ComponentPool::ComponentPool(usize size, usize align, MoveConstructFn moveConstruct, DestroyFn destroy)
@@ -22,6 +23,8 @@ void* ComponentPool::Insert(uint32 entity, void* component)
 {
     if (Has(entity)) return nullptr;
 
+    MX_CHECK(iterDepth == 0, "Cannot insert into ComponentPool while it is being iterated");
+
     if (entities.Size() >= capacity) Grow();
 
     const usize denseIndex = entities.Size();
@@ -36,6 +39,8 @@ void* ComponentPool::Insert(uint32 entity, void* component)
 bool ComponentPool::Remove(uint32 entity)
 {
     if (!entities.Has(entity)) return false;
+
+    MX_CHECK(iterDepth == 0, "Cannot remove from ComponentPool while it is being iterated");
 
     const usize denseIndex = entities.IndexOf(entity);
     const usize lastDenseIndex = entities.Size() - 1;
@@ -84,4 +89,15 @@ void ComponentPool::Grow()
 
     data = newData;
     capacity = newCapacity;
+}
+
+void ComponentPool::BeginIter()
+{
+    iterDepth++;
+}
+
+void ComponentPool::EndIter()
+{
+    MX_CHECK(iterDepth > 0, "Cannot end ComponentPool iteration that was not started");
+    iterDepth--;
 }
