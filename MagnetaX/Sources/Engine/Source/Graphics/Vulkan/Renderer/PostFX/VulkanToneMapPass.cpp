@@ -1,15 +1,23 @@
 // Copyright (c) 2026 PulsaX Szymon Krygier
 // SPDX-License-Identifier: MPL-2.0
-#include "VulkanPostFXPass.h"
+#include "VulkanToneMapPass.h"
 
 #if MX_GRAPHICS_VULKAN
 #include <MX/Generated/Shaders/Common/VulkanShaderFullscreenVert.h>
-#include <MX/Generated/Shaders/PostFX/VulkanShaderPostFXFrag.h>
+#include <MX/Generated/Shaders/PostFX/VulkanShaderToneMapFrag.h>
 #include <Graphics/Vulkan/VulkanDevice.h>
 #include <Graphics/Vulkan/VulkanInitializers.h>
 #include <Graphics/Vulkan/Resources/VulkanImage.h>
 
-bool VulkanPostFXPass::Create(const VulkanPostFXPassCreateInfo& createInfo)
+namespace
+{
+    struct ToneMapPushConstants
+    {
+        float32 exposureEV;
+    };
+}
+
+bool VulkanToneMapPass::Create(const VulkanToneMapPassCreateInfo& createInfo)
 {
     if (!createInfo.device || !createInfo.srcImage || createInfo.outFormat == VK_FORMAT_UNDEFINED) return false;
     if (!createInfo.srcImage->GetImageView()) return false;
@@ -89,15 +97,22 @@ bool VulkanPostFXPass::Create(const VulkanPostFXPassCreateInfo& createInfo)
 
     vkUpdateDescriptorSets(device, 1, &writeSet, 0, nullptr);
 
+    VkPushConstantRange pushConstRange{};
+    pushConstRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushConstRange.offset = 0;
+    pushConstRange.size = sizeof(ToneMapPushConstants);
+
     VulkanPipelineCreateInfo pipelineInfo{};
     pipelineInfo.vertexShader = MX_GRAPHICS_VULKAN_SHADER_FULLSCREEN_VERT;
     pipelineInfo.vertexShaderSize = MX_GRAPHICS_VULKAN_SHADER_FULLSCREEN_VERT_SIZE;
-    pipelineInfo.fragmentShader = MX_GRAPHICS_VULKAN_SHADER_POSTFX_FRAG;
-    pipelineInfo.fragmentShaderSize = MX_GRAPHICS_VULKAN_SHADER_POSTFX_FRAG_SIZE;
+    pipelineInfo.fragmentShader = MX_GRAPHICS_VULKAN_SHADER_TONEMAP_FRAG;
+    pipelineInfo.fragmentShaderSize = MX_GRAPHICS_VULKAN_SHADER_TONEMAP_FRAG_SIZE;
     pipelineInfo.colorFormats = &createInfo.outFormat;
     pipelineInfo.colorFormatCount = 1;
     pipelineInfo.descriptorSetLayouts = &descSetLayout;
     pipelineInfo.descriptorSetLayoutCount = 1;
+    pipelineInfo.pushConstantRanges = &pushConstRange;
+    pipelineInfo.pushConstantRangeCount = 1;
 
     if (!pipeline.Create(device, pipelineInfo))
     {
@@ -108,7 +123,7 @@ bool VulkanPostFXPass::Create(const VulkanPostFXPassCreateInfo& createInfo)
     return true;
 }
 
-void VulkanPostFXPass::Destroy()
+void VulkanToneMapPass::Destroy()
 {
     pipeline.Destroy();
 
@@ -127,7 +142,7 @@ void VulkanPostFXPass::Destroy()
     device = VK_NULL_HANDLE;
 }
 
-void VulkanPostFXPass::Record(const VulkanPostFXPassRenderInfo& renderInfo)
+void VulkanToneMapPass::Record(const VulkanToneMapPassRenderInfo& renderInfo)
 {
     if (!renderInfo.cmdBuffer || !renderInfo.targetView) return;
     if (renderInfo.extent.width == 0 || renderInfo.extent.height == 0) return;
@@ -167,6 +182,11 @@ void VulkanPostFXPass::Record(const VulkanPostFXPassRenderInfo& renderInfo)
     vkCmdSetScissor(renderInfo.cmdBuffer, 0, 1, &scissor);
 
     vkCmdBindPipeline(renderInfo.cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.GetPipeline());
+
+    ToneMapPushConstants pushConstants{};
+    pushConstants.exposureEV = renderInfo.exposureEV;
+
+    vkCmdPushConstants(renderInfo.cmdBuffer, pipeline.GetPipelineLayout(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ToneMapPushConstants), &pushConstants);
 
     vkCmdBindDescriptorSets(renderInfo.cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
         pipeline.GetPipelineLayout(), 0, 1, &descSet, 0, nullptr);

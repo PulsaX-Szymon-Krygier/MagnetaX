@@ -13,6 +13,7 @@
 #include "Deferred/VulkanGBufferPass.h"
 #include "Deferred/VulkanLightingPass.h"
 #include "PostFX/VulkanPostFXPass.h"
+#include "PostFX/VulkanToneMapPass.h"
 #include "Shadow/VulkanShadowDepthPass.h"
 #include "UI/VulkanUIPass.h"
 #include "Environment/VulkanEnvironmentRenderData.h"
@@ -149,6 +150,11 @@ private:
     // Scene color
     VulkanImage sceneColor;
     VkImageLayout sceneColorLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    // Tone mapping pass
+    VulkanImage ldrColor;
+    VkImageLayout ldrColorLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VulkanToneMapPass toneMapPass;
 
     // PostFX pass
     VulkanPostFXPass postFXPass;

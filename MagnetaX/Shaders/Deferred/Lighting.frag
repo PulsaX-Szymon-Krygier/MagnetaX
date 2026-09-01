@@ -145,6 +145,7 @@ vec3 CalculatePBRBRDF(vec3 albedo, vec3 normal, vec3 viewDirection, vec3 lightDi
     vec3 diffuse = kD * albedo / PI;
 
     return diffuse + specular;
+    //return diffuse;
 }
 
 float CalculateDistanceAttenuation(float distanceToLight, float range)
@@ -285,6 +286,8 @@ void main()
     vec3 material = texture(gMaterial, fragUV).rgb;
 
     float roughness = clamp(material.r, 0.04, 1.0);
+    //float roughness = clamp(material.r, 0.15, 1.0);
+    //float roughness = 1.0;
     float metallic = clamp(material.g, 0.0, 1.0);
     float ambientOcclusion = clamp(material.b, 0.0, 1.0);
 

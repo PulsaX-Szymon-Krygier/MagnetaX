@@ -5,29 +5,28 @@
 #include "../VulkanPass.h"
 #include "../VulkanPipeline.h"
 
-struct VulkanPostFXPassCreateInfo : VulkanPassCreateInfo
+struct VulkanToneMapPassCreateInfo : VulkanPassCreateInfo
 {
     VulkanImage* srcImage = nullptr;
     VkFormat outFormat = VK_FORMAT_UNDEFINED;
 };
 
-struct VulkanPostFXPassRenderInfo : VulkanPassRenderInfo
+struct VulkanToneMapPassRenderInfo : VulkanPassRenderInfo
 {
     VkImageView targetView = VK_NULL_HANDLE;
     VkExtent2D extent{};
+    float32 exposureEV = 0.0f;
 };
 
-class VulkanPostFXPass
+class VulkanToneMapPass
 {
 public:
-    VulkanPostFXPass() = default;
-    VulkanPostFXPass(const VulkanPostFXPass&) = delete;
-    VulkanPostFXPass& operator=(const VulkanPostFXPass&) = delete;
+    VulkanToneMapPass() = default;
 
-    bool Create(const VulkanPostFXPassCreateInfo& createInfo);
+    bool Create(const VulkanToneMapPassCreateInfo& createInfo);
     void Destroy();
 
-    void Record(const VulkanPostFXPassRenderInfo& renderInfo);
+    void Record(const VulkanToneMapPassRenderInfo& renderInfo);
 
 private:
     VkDevice device = VK_NULL_HANDLE;

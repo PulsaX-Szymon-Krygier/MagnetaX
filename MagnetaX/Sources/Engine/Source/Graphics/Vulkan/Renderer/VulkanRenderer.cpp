@@ -129,6 +129,18 @@ bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
         return false;
     }
 
+    VulkanImageCreateInfo ldrColorInfo{};
+    ldrColorInfo.device = device;
+    ldrColorInfo.extent = extent;
+    ldrColorInfo.format = ImageFormat::RGBA8_SRGB;
+    ldrColorInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+    if (!ldrColor.Create(ldrColorInfo))
+    {
+        Destroy();
+        return false;
+    }
+
     VulkanImageCreateInfo displayColorInfo{};
     displayColorInfo.device = device;
     displayColorInfo.extent = extent;
@@ -203,9 +215,20 @@ bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
         return false;
     }
 
+    VulkanToneMapPassCreateInfo toneMapInfo{};
+    toneMapInfo.device = device;
+    toneMapInfo.srcImage = &sceneColor;
+    toneMapInfo.outFormat = ldrColor.GetFormat();
+
+    if (!toneMapPass.Create(toneMapInfo))
+    {
+        Destroy();
+        return false;
+    }
+
     VulkanPostFXPassCreateInfo postFXInfo{};
     postFXInfo.device = device;
-    postFXInfo.srcImage = &sceneColor;
+    postFXInfo.srcImage = &ldrColor;
     postFXInfo.outFormat = swapchainFormat;
 
     if (!postFXPass.Create(postFXInfo))
@@ -244,13 +267,18 @@ void VulkanRenderer::Destroy()
     displayColorLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
     uiPass.Destroy();
+
     postFXPass.Destroy();
+    toneMapPass.Destroy();
 
     gBufferDebugPass.Destroy();
 
     skyPass.Destroy();
 
     lightingPass.Destroy();
+
+    ldrColor.Destroy();
+    ldrColorLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
     sceneColor.Destroy();
     sceneColorLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -478,11 +506,50 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
 
         sceneColorLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
+        VkPipelineStageFlags2 ldrColorSrcStage = VK_PIPELINE_STAGE_2_NONE;
+        VkAccessFlags2 ldrColorSrcAccess = VK_ACCESS_2_NONE;
+
+        if (ldrColorLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+        {
+            ldrColorSrcStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            ldrColorSrcAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+        }
+
+        const VkImageMemoryBarrier2 ldrColorWriteBarrier = VulkanInitializers::ImageMemoryBarrier(
+            ldrColor.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, ldrColorLayout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            ldrColorSrcStage, ldrColorSrcAccess, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+
+        dependencyInfo.pImageMemoryBarriers = &ldrColorWriteBarrier;
+
+        vkCmdPipelineBarrier2(cmdBuffer, &dependencyInfo);
+
+        ldrColorLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        VulkanToneMapPassRenderInfo toneMapInfo{};
+        toneMapInfo.cmdBuffer = cmdBuffer;
+        toneMapInfo.targetView = ldrColor.GetImageView();
+        toneMapInfo.extent = extent;
+        toneMapInfo.exposureEV = sceneData.exposureEV;
+
+        toneMapPass.Record(toneMapInfo);
+
+        const VkImageMemoryBarrier2 ldrColorReadBarrier = VulkanInitializers::ImageMemoryBarrier(
+            ldrColor.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+            VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+
+        dependencyInfo.pImageMemoryBarriers = &ldrColorReadBarrier;
+
+        vkCmdPipelineBarrier2(cmdBuffer, &dependencyInfo);
+
+        ldrColorLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
         VulkanPostFXPassRenderInfo postFXInfo{};
         postFXInfo.cmdBuffer = cmdBuffer;
         postFXInfo.targetView = displayTarget.GetImageView();
         postFXInfo.extent = extent;
-        postFXInfo.exposureEV = sceneData.exposureEV;
 
         postFXPass.Record(postFXInfo);
     }
