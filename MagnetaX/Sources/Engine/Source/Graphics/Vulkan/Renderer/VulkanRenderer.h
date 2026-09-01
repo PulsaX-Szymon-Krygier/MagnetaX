@@ -88,10 +88,15 @@ struct VulkanRendererFrameInfo
 //      Sky  (skyPass)            |
 //          |                     |
 //          v                     |
-//      sceneColor                |
+//      sceneColor (HDR)          |
 //          |                     |
-//  PostFX (ppostFXPass)          |
-//   exposure / tone map / AA     |
+//   Tone mapping                 |
+//   (toneMapPass)                |
+//          |                     |
+//          v                     |
+//     ldrColor (LDR)             |
+//          |                     |
+// PostFX (postFXPass)            |
 //          |                     |
 //          -----------------------
 //                     |
@@ -107,11 +112,15 @@ struct VulkanRendererFrameInfo
 //                     v
 //                  Present
 //
-// sceneColor is the scene referred
-// color result used as input for PostFX
+// sceneColor is the HDR scene result
+// produced by lighting and sky
 // 
-// display color is the display ready scene
-// result before final UI/presentation
+// ldrColor is the tone mapped LDR image
+// used as input for PostFX pass
+// 
+// display color is used when the display
+// ready scene needs to be sampled by UI
+// before final copmosition
 class VulkanRenderer
 {
 public:
