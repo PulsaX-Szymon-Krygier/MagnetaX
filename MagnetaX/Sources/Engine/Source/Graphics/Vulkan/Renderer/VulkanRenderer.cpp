@@ -550,6 +550,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
         postFXInfo.cmdBuffer = cmdBuffer;
         postFXInfo.targetView = displayTarget.GetImageView();
         postFXInfo.extent = extent;
+        postFXInfo.config = config.postFX.fxaa;
 
         postFXPass.Record(postFXInfo);
     }

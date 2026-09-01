@@ -8,8 +8,7 @@ struct FXAAConfig
 {
     bool enabled = true;
 
-    float32 edgeThresholdMin = 0.03f;
-    float32 edgeThreshold = 0.125f;
-
-    uint16 searchSteps = 12;
+    float32 contrastThreshold = 0.0833f;
+    float32 relativeThreshold = 0.166f;
+    float32 subpixelBlending = 0.75f;
 };

@@ -9,6 +9,17 @@
 #include <Graphics/Vulkan/VulkanInitializers.h>
 #include <Graphics/Vulkan/Resources/VulkanImage.h>
 
+namespace
+{
+    struct PostFXPushConstants
+    {
+        uint32 fxaaEnabled;
+        float32 contrastThreshold;
+        float32 relativeThreshold;
+        float32 subpixelBlending;
+    };
+}
+
 bool VulkanPostFXPass::Create(const VulkanPostFXPassCreateInfo& createInfo)
 {
     if (!createInfo.device || !createInfo.srcImage || createInfo.outFormat == VK_FORMAT_UNDEFINED) return false;
@@ -89,6 +100,11 @@ bool VulkanPostFXPass::Create(const VulkanPostFXPassCreateInfo& createInfo)
 
     vkUpdateDescriptorSets(device, 1, &writeSet, 0, nullptr);
 
+    VkPushConstantRange pushConstRange{};
+    pushConstRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushConstRange.offset = 0;
+    pushConstRange.size = sizeof(PostFXPushConstants);
+
     VulkanPipelineCreateInfo pipelineInfo{};
     pipelineInfo.vertexShader = MX_GRAPHICS_VULKAN_SHADER_FULLSCREEN_VERT;
     pipelineInfo.vertexShaderSize = MX_GRAPHICS_VULKAN_SHADER_FULLSCREEN_VERT_SIZE;
@@ -98,6 +114,8 @@ bool VulkanPostFXPass::Create(const VulkanPostFXPassCreateInfo& createInfo)
     pipelineInfo.colorFormatCount = 1;
     pipelineInfo.descriptorSetLayouts = &descSetLayout;
     pipelineInfo.descriptorSetLayoutCount = 1;
+    pipelineInfo.pushConstantRanges = &pushConstRange;
+    pipelineInfo.pushConstantRangeCount = 1;
 
     if (!pipeline.Create(device, pipelineInfo))
     {
@@ -167,6 +185,14 @@ void VulkanPostFXPass::Record(const VulkanPostFXPassRenderInfo& renderInfo)
     vkCmdSetScissor(renderInfo.cmdBuffer, 0, 1, &scissor);
 
     vkCmdBindPipeline(renderInfo.cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.GetPipeline());
+
+    PostFXPushConstants pushConstants{};
+    pushConstants.fxaaEnabled = renderInfo.config.enabled ? 1u : 0u;
+    pushConstants.contrastThreshold = renderInfo.config.contrastThreshold;
+    pushConstants.relativeThreshold = renderInfo.config.relativeThreshold;
+    pushConstants.subpixelBlending = renderInfo.config.subpixelBlending;
+
+    vkCmdPushConstants(renderInfo.cmdBuffer, pipeline.GetPipelineLayout(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PostFXPushConstants), &pushConstants);
 
     vkCmdBindDescriptorSets(renderInfo.cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
         pipeline.GetPipelineLayout(), 0, 1, &descSet, 0, nullptr);

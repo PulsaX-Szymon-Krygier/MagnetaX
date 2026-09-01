@@ -8,6 +8,14 @@ layout(set = 0, binding = 0) uniform sampler2D ldrColor;
 
 layout(location = 0) out vec4 outColor;
 
+layout(push_constant) uniform PushConstants
+{
+    uint fxaaEnabled;
+    float contrastThreshold;
+    float relativeThreshold;
+    float subpixelBlending;
+} pc;
+
 // ITU-R BT.601 standard (Luma formula)
 // Red (Kr) = 0.299
 // Green (Kg) = 0.587
@@ -15,18 +23,21 @@ layout(location = 0) out vec4 outColor;
 float Luma(vec3 color)
 {
     return dot(color, vec3(0.299, 0.587, 0.114));
+    //return dot(color, vec3(0.2126729, 0.7151522, 0.0721750)); // Rec.709 test
 }
 
 void main()
 {
-    const float edgeThresholdMin = 0.03;
-    const float edgeThreshold = 0.125;
-    const float subpixelQuality = 0.75;
     const int searchSteps = 12;
 
     vec2 texelSize = 1.0 / vec2(textureSize(ldrColor, 0));
-
     vec3 colorCenter = texture(ldrColor, fragUV).rgb;
+
+    if (pc.fxaaEnabled == 0)
+    {
+        outColor = vec4(colorCenter, 1.0);
+        return;
+    }
 
     float lumaCenter = Luma(colorCenter);
     float lumaNorth = Luma(texture(ldrColor, fragUV + vec2(0.0, -texelSize.y)).rgb);
@@ -43,10 +54,7 @@ void main()
     float lumaMax = max(lumaCenter, max(max(lumaNorth, lumaSouth), max(lumaWest, lumaEast)));
 
     float contrast = lumaMax - lumaMin;
-    float threshold = max(edgeThresholdMin, lumaMax * edgeThreshold);
-
-    //outColor = contrast >= threshold ? vec4(0.0, 0.0, 1.0, 1.0) : vec4(colorCenter, 1.0);
-    //return;
+    float threshold = max(pc.contrastThreshold, lumaMax * pc.relativeThreshold);
 
     if (contrast < threshold)
     {
@@ -59,9 +67,6 @@ void main()
 
     float edgeVertical = abs(lumaNorthWest + lumaNorthEast - 2.0 * lumaNorth) + 2.0 *
         abs(lumaWest + lumaEast - 2.0 * lumaCenter) + abs(lumaSouthWest + lumaSouthEast - 2.0 * lumaSouth);
-
-    //float edgeHorizontal = abs(lumaNorthWest + lumaNorthEast - 2.0 * lumaNorth) + 2.0 * abs(lumaWest + lumaEast - 2.0 * lumaCenter) + abs(lumaSouthWest + lumaSouthEast - 2.0 * lumaSouth);
-    //float edgeVertical = abs(lumaNorthWest + lumaSouthWest - 2.0 * lumaWest) + 2.0 * abs(lumaNorth + lumaSouth - 2.0 * lumaCenter) + abs(lumaNorthEast + lumaSouthEast - 2.0 * lumaEast);
 
     bool isHorizontal = edgeHorizontal >= edgeVertical;
 
@@ -155,7 +160,7 @@ void main()
     float subpixelOffset = abs(lumaAverage - lumaCenter) / contrast;
     subpixelOffset = clamp(subpixelOffset, 0.0, 1.0);
     subpixelOffset = (-2.0 * subpixelOffset + 3.0) * subpixelOffset * subpixelOffset;
-    subpixelOffset = subpixelOffset * subpixelOffset * subpixelQuality;
+    subpixelOffset = subpixelOffset * subpixelOffset * pc.subpixelBlending;
 
     float finalOffset = max(edgeOffset, subpixelOffset);
 
