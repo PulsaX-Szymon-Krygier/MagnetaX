@@ -6,7 +6,7 @@
 
 struct FXAAConfig
 {
-    bool enabled = true;
+    bool enabled = false;
 
     float32 contrastThreshold = 0.025f;
     float32 relativeThreshold = 0.165f;

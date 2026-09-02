@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MPL-2.0
 #pragma once
 
+#include <MX/Core/Math/Matrix.h>
 #include <MX/Graphics/GraphicsDebugView.h>
 #include <MX/Graphics/Renderer/RendererConfig.h>
 #include <MX/Graphics/Renderer/UI/UITexture.h>
@@ -14,12 +15,14 @@
 #include "Deferred/VulkanLightingPass.h"
 #include "PostFX/VulkanPostFXPass.h"
 #include "PostFX/VulkanToneMapPass.h"
+#include "PostFX/VulkanTAAPass.h"
 #include "Shadow/VulkanShadowDepthPass.h"
 #include "UI/VulkanUIPass.h"
 #include "Environment/VulkanEnvironmentRenderData.h"
 #include "Environment/VulkanSkyPass.h"
 #include <span>
 #include <vector>
+#include <array>
 
 class VulkanPresentContext;
 struct RenderSceneData;
@@ -88,7 +91,12 @@ struct VulkanRendererFrameInfo
 //      Sky  (skyPass)            |
 //          |                     |
 //          v                     |
-//      sceneColor (HDR)          |
+//   sceneColor (HDR)             |
+//          |                     |
+//    TAA (taaPass)               |
+//          |                     |
+//          v                     |
+//     TAA history                |
 //          |                     |
 //   Tone mapping                 |
 //   (toneMapPass)                |
@@ -159,6 +167,14 @@ private:
     // Scene color
     VulkanImage sceneColor;
     VkImageLayout sceneColorLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    // TAA
+    std::array<VulkanImage, 2> taaHistory;
+    std::array<VkImageLayout, 2> taaHistoryLayouts{ VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED };
+    VulkanTAAPass taaPass;
+    uint32 taaHistoryReadIndex = 0;
+    bool taaHistoryValid = false;
+    Matrix4f prevViewProj = Matrix4f::Identity();
 
     // Tone mapping pass
     VulkanImage ldrColor;

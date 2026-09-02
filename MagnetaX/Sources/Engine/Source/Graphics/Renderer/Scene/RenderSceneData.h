@@ -19,7 +19,12 @@ struct RenderSceneData
     float32 ambientLightIntensity = 0.1f;
 
     Matrix4f view = Matrix4f::Identity();
+    Matrix4f viewProjection = Matrix4f::Identity();
     Matrix4f viewProjectionInversed = Matrix4f::Identity();
+    Matrix4f jitteredViewProjectionInversed = Matrix4f::Identity();
+    Matrix4f jitteredViewProjection = Matrix4f::Identity();
+
+    Vector2f projectionJitter{ 0.0f };
 
     bool hasCamera = false;
     Vector3f cameraPosition{ 0.0f };

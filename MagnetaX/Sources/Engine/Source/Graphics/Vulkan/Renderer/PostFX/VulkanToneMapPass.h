@@ -13,6 +13,7 @@ struct VulkanToneMapPassCreateInfo : VulkanPassCreateInfo
 
 struct VulkanToneMapPassRenderInfo : VulkanPassRenderInfo
 {
+    VkImageView srcView = VK_NULL_HANDLE;
     VkImageView targetView = VK_NULL_HANDLE;
     VkExtent2D extent{};
     float32 exposureEV = 0.0f;

@@ -1,26 +1,30 @@
 // Copyright (c) 2026 PulsaX Szymon Krygier
 // SPDX-License-Identifier: MPL-2.0
-#include "VulkanToneMapPass.h"
+#include "VulkanTAAPass.h"
 
 #if MX_GRAPHICS_VULKAN
 #include <MX/Generated/Shaders/Common/VulkanShaderFullscreenVert.h>
-#include <MX/Generated/Shaders/PostFX/VulkanShaderToneMapFrag.h>
+#include <MX/Generated/Shaders/PostFX/VulkanShaderTAAFrag.h>
 #include <Graphics/Vulkan/VulkanDevice.h>
 #include <Graphics/Vulkan/VulkanInitializers.h>
 #include <Graphics/Vulkan/Resources/VulkanImage.h>
 
 namespace
 {
-    struct ToneMapPushConstants
+    struct TAAPushConstants
     {
-        float32 exposureEV;
+        Matrix4f reprojection;
+        Vector2f projectionJitter;
+        float32 historyWeight;
+        uint32 historyValid;
     };
 }
 
-bool VulkanToneMapPass::Create(const VulkanToneMapPassCreateInfo& createInfo)
+bool VulkanTAAPass::Create(const VulkanTAAPassCreateInfo& createInfo)
 {
-    if (!createInfo.device || !createInfo.srcImage || createInfo.outFormat == VK_FORMAT_UNDEFINED) return false;
-    if (!createInfo.srcImage->GetImageView()) return false;
+    if (!createInfo.device || !createInfo.currentColor || !createInfo.depthImage) return false;
+    if (createInfo.outFormat == VK_FORMAT_UNDEFINED) return false;
+    if (!createInfo.currentColor->GetImageView() || !createInfo.depthImage->GetImageView()) return false;
 
     const VkDevice buffDevice = createInfo.device->GetDevice();
     if (!buffDevice) return false;
@@ -29,13 +33,24 @@ bool VulkanToneMapPass::Create(const VulkanToneMapPassCreateInfo& createInfo)
 
     device = buffDevice;
 
-    VkDescriptorSetLayoutBinding binding{};
-    binding.binding = 0;
-    binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    binding.descriptorCount = 1;
-    binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    VkDescriptorSetLayoutBinding bindings[3]{};
 
-    const VkDescriptorSetLayoutCreateInfo layoutInfo = VulkanInitializers::DescriptorSetLayoutCreateInfo(1, &binding);
+    bindings[0].binding = 0;
+    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[0].descriptorCount = 1;
+    bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    bindings[1].binding = 1;
+    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[1].descriptorCount = 1;
+    bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    bindings[2].binding = 2;
+    bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[2].descriptorCount = 1;
+    bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    const VkDescriptorSetLayoutCreateInfo layoutInfo = VulkanInitializers::DescriptorSetLayoutCreateInfo(3, bindings);
 
     if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descSetLayout) != VK_SUCCESS)
     {
@@ -63,7 +78,7 @@ bool VulkanToneMapPass::Create(const VulkanToneMapPassCreateInfo& createInfo)
 
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = 1;
+    poolSize.descriptorCount = 3;
 
     const VkDescriptorPoolCreateInfo poolInfo = VulkanInitializers::DescriptorPoolCreateInfo(1, 1, &poolSize);
 
@@ -81,32 +96,55 @@ bool VulkanToneMapPass::Create(const VulkanToneMapPassCreateInfo& createInfo)
         return false;
     }
 
-    VkDescriptorImageInfo imageInfo{};
-    imageInfo.sampler = sampler;
-    imageInfo.imageView = createInfo.srcImage->GetImageView();
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkDescriptorImageInfo imageInfos[3]{};
 
-    VkWriteDescriptorSet writeSet{};
-    writeSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writeSet.dstSet = descSet;
-    writeSet.dstBinding = 0;
-    writeSet.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writeSet.descriptorCount = 1;
-    writeSet.pImageInfo = &imageInfo;
-    writeSet.pNext = nullptr;
+    imageInfos[0].sampler = sampler;
+    imageInfos[0].imageView = createInfo.currentColor->GetImageView();
+    imageInfos[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    vkUpdateDescriptorSets(device, 1, &writeSet, 0, nullptr);
+    imageInfos[1].sampler = sampler;
+    imageInfos[1].imageView = createInfo.currentColor->GetImageView();
+    imageInfos[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    imageInfos[2].sampler = sampler;
+    imageInfos[2].imageView = createInfo.depthImage->GetImageView();
+    imageInfos[2].imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+
+    VkWriteDescriptorSet writeSets[3]{};
+
+    writeSets[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writeSets[0].dstSet = descSet;
+    writeSets[0].dstBinding = 0;
+    writeSets[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writeSets[0].descriptorCount = 1;
+    writeSets[0].pImageInfo = &imageInfos[0];
+
+    writeSets[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writeSets[1].dstSet = descSet;
+    writeSets[1].dstBinding = 1;
+    writeSets[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writeSets[1].descriptorCount = 1;
+    writeSets[1].pImageInfo = &imageInfos[1];
+
+    writeSets[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writeSets[2].dstSet = descSet;
+    writeSets[2].dstBinding = 2;
+    writeSets[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writeSets[2].descriptorCount = 1;
+    writeSets[2].pImageInfo = &imageInfos[2];
+
+    vkUpdateDescriptorSets(device, 3, writeSets, 0, nullptr);
 
     VkPushConstantRange pushConstRange{};
     pushConstRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     pushConstRange.offset = 0;
-    pushConstRange.size = sizeof(ToneMapPushConstants);
+    pushConstRange.size = sizeof(TAAPushConstants);
 
     VulkanPipelineCreateInfo pipelineInfo{};
     pipelineInfo.vertexShader = MX_GRAPHICS_VULKAN_SHADER_FULLSCREEN_VERT;
     pipelineInfo.vertexShaderSize = MX_GRAPHICS_VULKAN_SHADER_FULLSCREEN_VERT_SIZE;
-    pipelineInfo.fragmentShader = MX_GRAPHICS_VULKAN_SHADER_TONEMAP_FRAG;
-    pipelineInfo.fragmentShaderSize = MX_GRAPHICS_VULKAN_SHADER_TONEMAP_FRAG_SIZE;
+    pipelineInfo.fragmentShader = MX_GRAPHICS_VULKAN_SHADER_TAA_FRAG;
+    pipelineInfo.fragmentShaderSize = MX_GRAPHICS_VULKAN_SHADER_TAA_FRAG_SIZE;
     pipelineInfo.colorFormats = &createInfo.outFormat;
     pipelineInfo.colorFormatCount = 1;
     pipelineInfo.descriptorSetLayouts = &descSetLayout;
@@ -123,7 +161,7 @@ bool VulkanToneMapPass::Create(const VulkanToneMapPassCreateInfo& createInfo)
     return true;
 }
 
-void VulkanToneMapPass::Destroy()
+void VulkanTAAPass::Destroy()
 {
     pipeline.Destroy();
 
@@ -142,26 +180,25 @@ void VulkanToneMapPass::Destroy()
     device = VK_NULL_HANDLE;
 }
 
-void VulkanToneMapPass::Record(const VulkanToneMapPassRenderInfo& renderInfo)
+void VulkanTAAPass::Record(const VulkanTAAPassRenderInfo& renderInfo)
 {
-    if (!renderInfo.cmdBuffer || !renderInfo.targetView) return;
+    if (!renderInfo.cmdBuffer || !renderInfo.historyView || !renderInfo.targetView) return;
     if (renderInfo.extent.width == 0 || renderInfo.extent.height == 0) return;
-    if (!renderInfo.targetView) return;
 
-    VkDescriptorImageInfo imageInfo{};
-    imageInfo.sampler = sampler;
-    imageInfo.imageView = renderInfo.srcView;
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkDescriptorImageInfo historyImageInfo{};
+    historyImageInfo.sampler = sampler;
+    historyImageInfo.imageView = renderInfo.historyView;
+    historyImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    VkWriteDescriptorSet writeSet{};
-    writeSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writeSet.dstSet = descSet;
-    writeSet.dstBinding = 0;
-    writeSet.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writeSet.descriptorCount = 1;
-    writeSet.pImageInfo = &imageInfo;
+    VkWriteDescriptorSet historyWrite{};
+    historyWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    historyWrite.dstSet = descSet;
+    historyWrite.dstBinding = 1;
+    historyWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    historyWrite.descriptorCount = 1;
+    historyWrite.pImageInfo = &historyImageInfo;
 
-    vkUpdateDescriptorSets(device, 1, &writeSet, 0, nullptr);
+    vkUpdateDescriptorSets(device, 1, &historyWrite, 0, nullptr);
 
     VkRenderingAttachmentInfo colorAttachment{};
     colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -199,13 +236,14 @@ void VulkanToneMapPass::Record(const VulkanToneMapPassRenderInfo& renderInfo)
 
     vkCmdBindPipeline(renderInfo.cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.GetPipeline());
 
-    ToneMapPushConstants pushConstants{};
-    pushConstants.exposureEV = renderInfo.exposureEV;
+    TAAPushConstants pushConstants{};
+    pushConstants.historyWeight = renderInfo.historyWeight;
+    pushConstants.historyValid = renderInfo.historyValid ? 1u : 0u;
+    pushConstants.reprojection = renderInfo.reprojection.Transposed();
+    pushConstants.projectionJitter = renderInfo.projectionJitter;
 
-    vkCmdPushConstants(renderInfo.cmdBuffer, pipeline.GetPipelineLayout(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ToneMapPushConstants), &pushConstants);
-
-    vkCmdBindDescriptorSets(renderInfo.cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        pipeline.GetPipelineLayout(), 0, 1, &descSet, 0, nullptr);
+    vkCmdPushConstants(renderInfo.cmdBuffer, pipeline.GetPipelineLayout(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(TAAPushConstants), &pushConstants);
+    vkCmdBindDescriptorSets(renderInfo.cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.GetPipelineLayout(), 0, 1, &descSet, 0, nullptr);
 
     vkCmdDraw(renderInfo.cmdBuffer, 3, 1, 0, 0);
 

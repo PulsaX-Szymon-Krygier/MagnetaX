@@ -256,7 +256,8 @@ void VulkanLightingPass::Record(const VulkanLightingPassRenderInfo& renderInfo)
 
     LightingFrameData frameData{};
     frameData.view = sceneData.view.Transposed();
-    frameData.viewProjectionInversed = sceneData.viewProjectionInversed.Transposed();
+    //frameData.viewProjectionInversed = sceneData.viewProjectionInversed.Transposed();
+    frameData.viewProjectionInversed = sceneData.jitteredViewProjectionInversed.Transposed();
     frameData.cameraPosition = Vector4f(sceneData.cameraPosition, 1.0f);
 
     for (uint32 i = 0; i < MX_GRAPHICS_DIRECTIONAL_SHADOW_CASCADE_COUNT; ++i)

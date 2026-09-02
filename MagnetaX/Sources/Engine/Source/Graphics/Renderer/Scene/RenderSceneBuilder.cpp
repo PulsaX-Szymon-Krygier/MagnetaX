@@ -8,7 +8,7 @@
 #include <MX/Scene/Component/MeshComponent.h>
 #include <MX/Scene/Scene.h>
 
-RenderSceneData BuildRenderSceneData(Scene* scene, const Size2i& renderSize)
+RenderSceneData BuildRenderSceneData(Scene* scene, const Size2i& renderSize, const Vector2f& projectionJitter)
 {
     RenderSceneData sceneData{};
 
@@ -56,11 +56,23 @@ RenderSceneData BuildRenderSceneData(Scene* scene, const Size2i& renderSize)
 
     const Matrix4f cameraWorldMatrix = cameraEntity.GetWorldMatrix();
     const Matrix4f viewMatrix = cameraWorldMatrix.Inversed();
+
     const Matrix4f projectionMatrix = cameraComponent->GetProjectionMatrix(aspect);
+
+    Matrix4f jitteredProjectionMatrix = projectionMatrix;
+    jitteredProjectionMatrix.m02 -= projectionJitter.x;
+    jitteredProjectionMatrix.m12 -= projectionJitter.y;
+
     const Matrix4f viewProjMatrix = projectionMatrix * viewMatrix;
+    const Matrix4f jitteredViewProjMatrix = jitteredProjectionMatrix * viewMatrix;
 
     sceneData.view = viewMatrix;
+    sceneData.viewProjection = viewProjMatrix;
     sceneData.viewProjectionInversed = viewProjMatrix.Inversed();
+    sceneData.jitteredViewProjection = jitteredViewProjMatrix;
+    sceneData.jitteredViewProjectionInversed = jitteredViewProjMatrix.Inversed();
+    sceneData.projectionJitter = projectionJitter;
+
     sceneData.hasCamera = true;
     sceneData.cameraPosition = Vector3f(cameraWorldMatrix.m03, cameraWorldMatrix.m13, cameraWorldMatrix.m23);
     sceneData.cameraNearPlane = cameraComponent->nearPlane;
@@ -75,7 +87,7 @@ RenderSceneData BuildRenderSceneData(Scene* scene, const Size2i& renderSize)
             RenderObject object{};
             object.mesh = meshComponent.mesh;
             object.model = entity.GetWorldMatrix();
-            object.mvp = viewProjMatrix * object.model;
+            object.mvp = jitteredViewProjMatrix * object.model;
 
             MaterialComponent* materialComponent = entity.GetComponent<MaterialComponent>();
 

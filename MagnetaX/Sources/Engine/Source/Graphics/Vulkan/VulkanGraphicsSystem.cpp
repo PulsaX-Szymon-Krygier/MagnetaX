@@ -16,6 +16,34 @@
 #include "VulkanInitializers.h"
 #include <vector>
 
+namespace
+{
+    float32 Halton(uint32 index, uint32 base)
+    {
+        float32 result = 0.0f;
+        float32 fraction = 1.0f;
+
+        while (index > 0)
+        {
+            fraction /= (float32)base;
+            result += fraction * (float32)(index % base);
+            index /= base;
+        }
+
+        return result;
+    }
+
+    Vector2f CalculateTAAJitter(uint64 frameIndex, const Size2i& renderSize)
+    {
+        const uint32 sampleIndex = (uint32)(frameIndex % 8) + 1;
+
+        const float32 jitterX = Halton(sampleIndex, 2) - 0.5f;
+        const float32 jitterY = Halton(sampleIndex, 3) - 0.5f;
+
+        return Vector2f(2.0f * jitterX / (float32)renderSize.width, 2.0f * jitterY / (float32)renderSize.height);
+    }
+}
+
 VulkanGraphicsSystem::VulkanGraphicsSystem() = default;
 VulkanGraphicsSystem::~VulkanGraphicsSystem() = default;
 
@@ -243,7 +271,20 @@ void VulkanGraphicsSystem::RenderScene(Scene* scene, AssetManager* assetManager,
     if (extent.width == 0 || extent.height == 0) return;
 
     const Size2i renderSize(extent.width, extent.height);
-    const RenderSceneData sceneData = BuildRenderSceneData(scene, renderSize);
+    Vector2f projectionJitter{ 0.0f };
+
+    // EXPERIMENTAL TAA
+    // If you enable/disable there, you
+    // also need to change similar bool in
+    // VulkanRenderer.h
+    bool taaEnabled = false;
+
+    if (taaEnabled)
+    {
+        projectionJitter = CalculateTAAJitter(taaFrameIndex++, renderSize);
+    }
+
+    const RenderSceneData sceneData = BuildRenderSceneData(scene, renderSize, projectionJitter);
 
     UpdateEnvironment(sceneData.environmentMap, assetManager);
 

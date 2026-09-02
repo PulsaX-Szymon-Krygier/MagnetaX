@@ -7,4 +7,4 @@
 
 class Scene;
 
-RenderSceneData BuildRenderSceneData(Scene* scene, const Size2i& renderSize);
+RenderSceneData BuildRenderSceneData(Scene* scene, const Size2i& renderSize, const Vector2f& projectionJitter);

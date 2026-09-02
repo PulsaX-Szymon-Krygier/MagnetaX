@@ -129,6 +129,33 @@ bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
         return false;
     }
 
+    VulkanImageCreateInfo taaHistoryInfo{};
+    taaHistoryInfo.device = device;
+    taaHistoryInfo.extent = extent;
+    taaHistoryInfo.format = ImageFormat::RGBA16_FLOAT;
+    taaHistoryInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+    for (VulkanImage& history : taaHistory)
+    {
+        if (!history.Create(taaHistoryInfo))
+        {
+            Destroy();
+            return false;
+        }
+    }
+
+    VulkanTAAPassCreateInfo taaInfo{};
+    taaInfo.device = device;
+    taaInfo.currentColor = &sceneColor;
+    taaInfo.outFormat = taaHistory[0].GetFormat();
+    taaInfo.depthImage = &gBufferPass.GetGBuffer().GetDepthImage();
+
+    if (!taaPass.Create(taaInfo))
+    {
+        Destroy();
+        return false;
+    }
+
     VulkanImageCreateInfo ldrColorInfo{};
     ldrColorInfo.device = device;
     ldrColorInfo.extent = extent;
@@ -217,7 +244,7 @@ bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
 
     VulkanToneMapPassCreateInfo toneMapInfo{};
     toneMapInfo.device = device;
-    toneMapInfo.srcImage = &sceneColor;
+    toneMapInfo.srcImage = &taaHistory[0];
     toneMapInfo.outFormat = ldrColor.GetFormat();
 
     if (!toneMapPass.Create(toneMapInfo))
@@ -271,6 +298,13 @@ void VulkanRenderer::Destroy()
     postFXPass.Destroy();
     toneMapPass.Destroy();
 
+    taaPass.Destroy();
+
+    for (VulkanImage& history : taaHistory)
+    {
+        history.Destroy();
+    }
+
     gBufferDebugPass.Destroy();
 
     skyPass.Destroy();
@@ -315,6 +349,11 @@ void VulkanRenderer::Destroy()
     commandPool.Destroy();
 
     swapchainImageLayouts.clear();
+
+    taaHistoryLayouts = { VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED };
+    taaHistoryReadIndex = 0;
+    taaHistoryValid = false;
+    prevViewProj = Matrix4f::Identity();
 
     config = {};
     presentContext = nullptr;
@@ -506,6 +545,98 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
 
         sceneColorLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
+        // Expermiental TAA
+        // If you enable there u need to also
+        // enable in VulkanGraphicsSystem.cpp
+        bool taaEnabled = false;
+
+        VkImageView toneMapSourceView = sceneColor.GetImageView();
+
+        if (taaEnabled)
+        {
+            const uint32 taaHistoryWriteIndex = 1u - taaHistoryReadIndex;
+
+            VulkanImage& taaHistoryRead = taaHistory[taaHistoryReadIndex];
+            VulkanImage& taaHistoryWrite = taaHistory[taaHistoryWriteIndex];
+
+            VkImageLayout& taaHistoryReadLayout = taaHistoryLayouts[taaHistoryReadIndex];
+            VkImageLayout& taaHistoryWriteLayout = taaHistoryLayouts[taaHistoryWriteIndex];
+
+            if (taaHistoryReadLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+            {
+                const VkImageMemoryBarrier2 taaHistoryReadBarrier = VulkanInitializers::ImageMemoryBarrier(taaHistoryRead.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, taaHistoryReadLayout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+
+                dependencyInfo.imageMemoryBarrierCount = 1;
+                dependencyInfo.pImageMemoryBarriers = &taaHistoryReadBarrier;
+
+                vkCmdPipelineBarrier2(cmdBuffer, &dependencyInfo);
+
+                taaHistoryReadLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            }
+
+            VkPipelineStageFlags2 taaHistoryWriteSrcStage = VK_PIPELINE_STAGE_2_NONE;
+            VkAccessFlags2 taaHistoryWriteSrcAccess = VK_ACCESS_2_NONE;
+
+            if (taaHistoryWriteLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+            {
+                taaHistoryWriteSrcStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+                taaHistoryWriteSrcAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+            }
+
+            const VkImageMemoryBarrier2 taaHistoryWriteBarrier = VulkanInitializers::ImageMemoryBarrier(taaHistoryWrite.GetImage(),
+                VK_IMAGE_ASPECT_COLOR_BIT, taaHistoryWriteLayout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, taaHistoryWriteSrcStage,
+                taaHistoryWriteSrcAccess, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+
+            dependencyInfo.imageMemoryBarrierCount = 1;
+            dependencyInfo.pImageMemoryBarriers = &taaHistoryWriteBarrier;
+
+            vkCmdPipelineBarrier2(cmdBuffer, &dependencyInfo);
+
+            taaHistoryWriteLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+            VulkanTAAPassRenderInfo taaInfo{};
+            taaInfo.cmdBuffer = cmdBuffer;
+            taaInfo.historyView = taaHistoryRead.GetImageView();
+            taaInfo.targetView = taaHistoryWrite.GetImageView();
+            taaInfo.extent = extent;
+            taaInfo.historyWeight = 0.875f;
+            taaInfo.historyValid = taaHistoryValid;
+
+            Matrix4f reprojection = Matrix4f::Identity();
+
+            if (taaHistoryValid)
+            {
+                reprojection = prevViewProj * sceneData.jitteredViewProjectionInversed;
+            }
+
+            taaInfo.reprojection = reprojection;
+            taaInfo.projectionJitter = sceneData.projectionJitter;
+
+            taaPass.Record(taaInfo);
+
+            toneMapSourceView = taaHistoryWrite.GetImageView();
+
+            const VkImageMemoryBarrier2 taaHistoryOutputBarrier = VulkanInitializers::ImageMemoryBarrier(taaHistoryWrite.GetImage(),
+                VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+
+            dependencyInfo.imageMemoryBarrierCount = 1;
+            dependencyInfo.pImageMemoryBarriers = &taaHistoryOutputBarrier;
+
+            vkCmdPipelineBarrier2(cmdBuffer, &dependencyInfo);
+
+            taaHistoryWriteLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+            prevViewProj = sceneData.viewProjection;
+            taaHistoryReadIndex = taaHistoryWriteIndex;
+            taaHistoryValid = true;
+        }
+        else
+        {
+            taaHistoryValid = false;
+        }
+
         VkPipelineStageFlags2 ldrColorSrcStage = VK_PIPELINE_STAGE_2_NONE;
         VkAccessFlags2 ldrColorSrcAccess = VK_ACCESS_2_NONE;
 
@@ -531,6 +662,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
         toneMapInfo.targetView = ldrColor.GetImageView();
         toneMapInfo.extent = extent;
         toneMapInfo.exposureEV = sceneData.exposureEV;
+        toneMapInfo.srcView = toneMapSourceView;
 
         toneMapPass.Record(toneMapInfo);
 
@@ -556,6 +688,8 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
     }
     else
     {
+        taaHistoryValid = false;
+
         GBufferDebugView gBufferView = GBufferDebugView::ALBEDO;
 
         switch (debugView)
