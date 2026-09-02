@@ -16,166 +16,271 @@ layout(push_constant) uniform PushConstants
     float subpixelBlending;
 } pc;
 
-// ITU-R BT.601 standard (Luma formula)
-// Red (Kr) = 0.299
-// Green (Kg) = 0.587
-// Blue (Kb) = 0.114
-float Luma(vec3 color)
+// ----------------------- FXAA 3.11 -----------------------
+// Credits for Timothy Lottes for FXAA 3.11 (thank you!)
+// https://developer.download.nvidia.com/assets/gamedev/files/sdk/11/FXAA_WhitePaper.pdf
+// https://www.iryoku.com/aacourse/downloads/09-FXAA-3.11-in-15-Slides.pdf
+// https://github.com/GameTechDev/CMAA2/blob/master/Projects/CMAA2/FXAA/Fxaa3_11.h
+struct LuminanceData
 {
-    return dot(color, vec3(0.299, 0.587, 0.114));
-    //return dot(color, vec3(0.2126729, 0.7151522, 0.0721750)); // Rec.709 test
+    float m;
+    float n;
+    float e;
+    float s;
+    float w;
+
+    float ne;
+    float nw;
+    float se;
+    float sw;
+
+    float highest;
+    float lowest;
+    float contrast;
+};
+
+struct EdgeData
+{
+    bool isHorizontal;
+    float pixelStep;
+    float oppositeLuminance;
+    float gradient;
+};
+
+vec4 Sample(vec2 uv)
+{
+    return texture(ldrColor, uv);
 }
+
+float SampleLuminance(vec2 uv)
+{
+    return Sample(uv).a;
+}
+
+float SampleLuminance(vec2 uv, float uOffset, float vOffset, vec2 texelSize)
+{
+    return SampleLuminance(uv + vec2(uOffset, vOffset) * texelSize);
+}
+
+LuminanceData SampleLuminanceNeighborhood(vec2 uv, vec2 texelSize)
+{
+    LuminanceData l;
+
+    l.m = SampleLuminance(uv);
+    l.n = SampleLuminance(uv, 0.0, -1.0, texelSize);
+    l.e = SampleLuminance(uv, 1.0, 0.0, texelSize);
+    l.s = SampleLuminance(uv, 0.0, 1.0, texelSize);
+    l.w = SampleLuminance(uv, -1.0, 0.0, texelSize);
+
+    l.ne = SampleLuminance(uv, 1.0, -1.0, texelSize);
+    l.nw = SampleLuminance(uv, -1.0, -1.0, texelSize);
+    l.se = SampleLuminance(uv, 1.0, 1.0, texelSize);
+    l.sw = SampleLuminance(uv, -1.0, 1.0, texelSize);
+
+    l.highest = max(l.m, max(max(l.n, l.s), max(l.e, l.w)));
+    l.lowest = min(l.m, min(min(l.n, l.s), min(l.e, l.w)));
+    l.contrast = l.highest - l.lowest;
+
+    return l;
+}
+
+bool ShouldSkipPixel(LuminanceData l)
+{
+    float threshold = max(pc.contrastThreshold, pc.relativeThreshold * l.highest);
+
+    return l.contrast < threshold;
+}
+
+float DeterminePixelBlendFactor(LuminanceData l)
+{
+    float filteredLuminance = 2.0 * (l.n + l.e + l.s + l.w);
+    filteredLuminance += l.ne + l.nw + l.se + l.sw;
+    filteredLuminance *= 1.0 / 12.0;
+
+    filteredLuminance = abs(filteredLuminance - l.m);
+    filteredLuminance = clamp(filteredLuminance / l.contrast, 0.0, 1.0);
+
+    float blendFactor = smoothstep(0.0, 1.0, filteredLuminance);
+
+    return blendFactor * blendFactor * pc.subpixelBlending;
+}
+
+EdgeData DetermineEdge(LuminanceData l, vec2 texelSize)
+{
+    EdgeData edge;
+
+    float horizontal = 2.0 * abs(l.n + l.s - 2.0 * l.m) +
+        abs(l.ne + l.se - 2.0 * l.e) + abs(l.nw + l.sw - 2.0 * l.w);
+
+    float vertical = 2.0 * abs(l.e + l.w - 2.0 * l.m) + 
+        abs(l.ne + l.nw - 2.0 * l.n) + abs(l.se + l.sw - 2.0 * l.s);
+
+    edge.isHorizontal = horizontal >= vertical;
+
+    float positiveLuminance = edge.isHorizontal ? l.s : l.e;
+    float negativeLuminance = edge.isHorizontal ? l.n : l.w;
+
+    float positiveGradient = abs(positiveLuminance - l.m);
+    float negativeGradient = abs(negativeLuminance - l.m);
+
+    edge.pixelStep = edge.isHorizontal ? texelSize.y : texelSize.x;
+
+    if (positiveGradient < negativeGradient)
+    {
+        edge.pixelStep = -edge.pixelStep;
+        edge.oppositeLuminance = negativeLuminance;
+        edge.gradient = negativeGradient;
+    }
+    else
+    {
+        edge.oppositeLuminance = positiveLuminance;
+        edge.gradient = positiveGradient;
+    }
+
+    return edge;
+}
+
+float DetermineEdgeBlendFactor(LuminanceData l, EdgeData edge, vec2 uv, vec2 texelSize)
+{
+    vec2 edgeUV = uv;
+    vec2 edgeStep;
+
+    if (edge.isHorizontal)
+    {
+        edgeUV.y += edge.pixelStep * 0.5;
+        edgeStep = vec2(texelSize.x, 0.0);
+    }
+    else
+    {
+        edgeUV.x += edge.pixelStep * 0.5;
+        edgeStep = vec2(0.0, texelSize.y);
+    }
+
+    float edgeLuminance = 0.5 * (l.m + edge.oppositeLuminance);
+    float gradientThreshold = edge.gradient * 0.25;
+
+    vec2 positiveUV = edgeUV + edgeStep;
+    vec2 negativeUV = edgeUV - edgeStep;
+
+    float positiveLuminanceDelta = SampleLuminance(positiveUV) - edgeLuminance;
+    float negativeLuminanceDelta = SampleLuminance(negativeUV) - edgeLuminance;
+
+    bool positiveAtEnd = abs(positiveLuminanceDelta) >= gradientThreshold;
+    bool negativeAtEnd = abs(negativeLuminanceDelta) >= gradientThreshold;
+
+    const int edgeStepCount = 9;
+    const float edgeSteps[edgeStepCount] = float[](1.5, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 4.0);
+
+    for (int i = 0; i < edgeStepCount && (!positiveAtEnd || !negativeAtEnd); ++i)
+    {
+        if (!positiveAtEnd)
+        {
+            positiveUV += edgeStep * edgeSteps[i];
+            positiveLuminanceDelta = SampleLuminance(positiveUV) - edgeLuminance;
+            positiveAtEnd = abs(positiveLuminanceDelta) >= gradientThreshold;
+        }
+
+        if (!negativeAtEnd)
+        {
+            negativeUV -= edgeStep * edgeSteps[i];
+            negativeLuminanceDelta = SampleLuminance(negativeUV) - edgeLuminance;
+            negativeAtEnd = abs(negativeLuminanceDelta) >= gradientThreshold;
+        }
+    }
+
+    const float edgeGuess = 8.0;
+
+    if (!positiveAtEnd)
+    {
+        positiveUV += edgeStep * edgeGuess;
+    }
+
+    if (!negativeAtEnd)
+    {
+        negativeUV -= edgeStep * edgeGuess;
+    }
+
+    float positiveDistance;
+    float negativeDistance;
+
+    if (edge.isHorizontal)
+    {
+        positiveDistance = positiveUV.x - uv.x;
+        negativeDistance = uv.x - negativeUV.x;
+    }
+    else
+    {
+        positiveDistance = positiveUV.y - uv.y;
+        negativeDistance = uv.y - negativeUV.y;
+    }
+
+    float shortestDistance;
+    float nearestLuminanceDelta;
+
+    if (positiveDistance <= negativeDistance)
+    {
+        shortestDistance = positiveDistance;
+        nearestLuminanceDelta = positiveLuminanceDelta;
+    }
+    else
+    {
+        shortestDistance = negativeDistance;
+        nearestLuminanceDelta = negativeLuminanceDelta;
+    }
+
+    bool nearestDeltaSign = nearestLuminanceDelta >= 0.0;
+    bool centerDeltaSign = (l.m - edgeLuminance) >= 0.0;
+
+    if (nearestDeltaSign == centerDeltaSign)
+    {
+        return 0.0;
+    }
+
+    float edgeLength = positiveDistance + negativeDistance;
+
+    return 0.5 - shortestDistance / edgeLength;
+}
+
+vec3 ApplyFXAA(vec2 uv)
+{
+    if (pc.fxaaEnabled == 0)
+    {
+        return Sample(uv).rgb;
+    }
+
+    vec2 texelSize = 1.0 / vec2(textureSize(ldrColor, 0));
+
+    LuminanceData l = SampleLuminanceNeighborhood(uv, texelSize);
+
+    if (ShouldSkipPixel(l))
+    {
+        //return vec3(0.0);
+        return Sample(uv).rgb;
+    }
+
+    //return vec3(1.0, 0.0, 0.0);
+
+    float pixelBlend = DeterminePixelBlendFactor(l);
+
+    EdgeData edge = DetermineEdge(l, texelSize);
+    float edgeBlend = DetermineEdgeBlendFactor(l, edge, uv, texelSize);
+
+    float finalBlend = max(pixelBlend, edgeBlend);
+
+    if (edge.isHorizontal)
+    {
+        uv.y += edge.pixelStep * finalBlend;
+    }
+    else
+    {
+        uv.x += edge.pixelStep * finalBlend;
+    }
+
+    return Sample(uv).rgb;
+}
+// ----------------------- END OF FXAA 3.11 -----------------------
 
 void main()
 {
-    const int searchSteps = 12;
-
-    vec2 texelSize = 1.0 / vec2(textureSize(ldrColor, 0));
-    vec3 colorCenter = texture(ldrColor, fragUV).rgb;
-
-    if (pc.fxaaEnabled == 0)
-    {
-        outColor = vec4(colorCenter, 1.0);
-        return;
-    }
-
-    float lumaCenter = Luma(colorCenter);
-    float lumaNorth = Luma(texture(ldrColor, fragUV + vec2(0.0, -texelSize.y)).rgb);
-    float lumaSouth = Luma(texture(ldrColor, fragUV + vec2(0.0, texelSize.y)).rgb);
-    float lumaWest = Luma(texture(ldrColor, fragUV + vec2(-texelSize.x, 0.0)).rgb);
-    float lumaEast = Luma(texture(ldrColor, fragUV + vec2(texelSize.x, 0.0)).rgb);
-
-    float lumaNorthWest = Luma(texture(ldrColor, fragUV + vec2(-texelSize.x, -texelSize.y)).rgb);
-    float lumaNorthEast = Luma(texture(ldrColor, fragUV + vec2(texelSize.x, -texelSize.y)).rgb);
-    float lumaSouthWest = Luma(texture(ldrColor, fragUV + vec2(-texelSize.x, texelSize.y)).rgb);
-    float lumaSouthEast = Luma(texture(ldrColor, fragUV + vec2(texelSize.x, texelSize.y)).rgb);
-
-    float lumaMin = min(lumaCenter, min(min(lumaNorth, lumaSouth), min(lumaWest, lumaEast)));
-    float lumaMax = max(lumaCenter, max(max(lumaNorth, lumaSouth), max(lumaWest, lumaEast)));
-
-    float contrast = lumaMax - lumaMin;
-    float threshold = max(pc.contrastThreshold, lumaMax * pc.relativeThreshold);
-
-    if (contrast < threshold)
-    {
-        outColor = vec4(colorCenter, 1.0);
-        return;
-    }
-
-    float edgeHorizontal = abs(lumaNorthWest + lumaSouthWest - 2.0 * lumaWest) + 2.0 *
-        abs(lumaNorth + lumaSouth - 2.0 * lumaCenter) + abs(lumaNorthEast + lumaSouthEast - 2.0 * lumaEast);
-
-    float edgeVertical = abs(lumaNorthWest + lumaNorthEast - 2.0 * lumaNorth) + 2.0 *
-        abs(lumaWest + lumaEast - 2.0 * lumaCenter) + abs(lumaSouthWest + lumaSouthEast - 2.0 * lumaSouth);
-
-    bool isHorizontal = edgeHorizontal >= edgeVertical;
-
-    float luma1 = isHorizontal ? lumaNorth : lumaWest;
-    float luma2 = isHorizontal ? lumaSouth : lumaEast;
-
-    float gradient1 = luma1 - lumaCenter;
-    float gradient2 = luma2 - lumaCenter;
-
-    bool isGradient1Steeper = abs(gradient1) >= abs(gradient2);
-
-    float gradient = max(abs(gradient1), abs(gradient2));
-    float gradientThreshold = gradient * 0.25;
-
-    float stepLength = isHorizontal ? texelSize.y : texelSize.x;
-
-    float lumaLocalAverage;
-
-    if (isGradient1Steeper)
-    {
-        stepLength = -stepLength;
-        lumaLocalAverage = 0.5 * (luma1 + lumaCenter);
-    }
-    else
-    {
-        lumaLocalAverage = 0.5 * (luma2 + lumaCenter);
-    }
-
-    vec2 currentUV = fragUV;
-
-    if (isHorizontal)
-    {
-        currentUV.y += stepLength * 0.5;
-    }
-    else
-    {
-        currentUV.x += stepLength * 0.5;
-    }
-
-    vec2 edgeStep = isHorizontal ? vec2(texelSize.x, 0.0) : vec2(0.0, texelSize.y);
-
-    vec2 uv1 = currentUV - edgeStep;
-    vec2 uv2 = currentUV + edgeStep;
-
-    float lumaEnd1 = Luma(texture(ldrColor, uv1).rgb) - lumaLocalAverage;
-    float lumaEnd2 = Luma(texture(ldrColor, uv2).rgb) - lumaLocalAverage;
-
-    bool reachedEnd1 = abs(lumaEnd1) >= gradientThreshold;
-    bool reachedEnd2 = abs(lumaEnd2) >= gradientThreshold;
-
-    for (int i = 0; i < searchSteps && (!reachedEnd1 || !reachedEnd2); ++i)
-    {
-        if (!reachedEnd1)
-        {
-            uv1 -= edgeStep;
-            lumaEnd1 = Luma(texture(ldrColor, uv1).rgb) - lumaLocalAverage;
-            reachedEnd1 = abs(lumaEnd1) >= gradientThreshold;
-        }
-
-        if (!reachedEnd2)
-        {
-            uv2 += edgeStep;
-            lumaEnd2 = Luma(texture(ldrColor, uv2).rgb) - lumaLocalAverage;
-            reachedEnd2 = abs(lumaEnd2) >= gradientThreshold;
-        }
-    }
-
-    float distance1 = isHorizontal ? fragUV.x - uv1.x : fragUV.y - uv1.y;
-    float distance2 = isHorizontal ? uv2.x - fragUV.x : uv2.y - fragUV.y;
-
-    bool isDirection1 = distance1 < distance2;
-
-    float distanceFinal = min(distance1, distance2);
-    float edgeThickness = distance1 + distance2;
-
-    float edgeOffset = 0.5 - distanceFinal / edgeThickness;
-
-    float lumaEnd = isDirection1 ? lumaEnd1 : lumaEnd2;
-
-    bool isLumaCenterSmaller = lumaCenter < lumaLocalAverage;
-    bool correctVariation = (lumaEnd < 0.0) != isLumaCenterSmaller;
-
-    if (!correctVariation)
-    {
-        edgeOffset = 0.0;
-    }
-
-    float lumaAverage = (2.0 * (lumaNorth + lumaSouth + lumaWest + lumaEast) + lumaNorthWest +
-        lumaNorthEast + lumaSouthWest + lumaSouthEast) / 12.0;
-
-    float subpixelOffset = abs(lumaAverage - lumaCenter) / contrast;
-    subpixelOffset = clamp(subpixelOffset, 0.0, 1.0);
-    subpixelOffset = (-2.0 * subpixelOffset + 3.0) * subpixelOffset * subpixelOffset;
-    subpixelOffset = subpixelOffset * subpixelOffset * pc.subpixelBlending;
-
-    float finalOffset = max(edgeOffset, subpixelOffset);
-
-    vec2 finalUV = fragUV;
-
-    if (isHorizontal)
-    {
-        finalUV.y += finalOffset * stepLength;
-    }
-    else
-    {
-        finalUV.x += finalOffset * stepLength;
-    }
-
-    vec3 finalColor = texture(ldrColor, finalUV).rgb;
-
-    outColor = vec4(finalColor, 1.0);
+    outColor = vec4(ApplyFXAA(fragUV), 1.0);
 }

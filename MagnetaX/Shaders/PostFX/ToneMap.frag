@@ -22,12 +22,19 @@ vec3 ToneMapACES(vec3 color)
     return clamp((color * (a * color + b)) / (color * (c * color + d) + e), 0.0, 1.0);
 }
 
+float Luminance(vec3 color)
+{
+    return sqrt(dot(color, vec3(0.299, 0.587, 0.114)));
+}
+
 void main()
 {
     vec3 color = texture(sceneColor, fragUV).rgb;
 
     color *= exp2(pc.exposureEV);
+    //color *= exp2(2.0);
     color = ToneMapACES(color);
 
-    outColor = vec4(color, 1.0);
+    // Final RGB + luminance value in alpha channel
+    outColor = vec4(color, Luminance(color));
 }
