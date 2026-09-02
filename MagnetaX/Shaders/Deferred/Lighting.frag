@@ -99,16 +99,21 @@ vec3 FresnelSchlickRoughness(float cosTheta, vec3 f0, float roughness)
 
 vec3 CalculateEnvironmentSpecular(vec3 albedo, vec3 normal, vec3 viewDirection, float roughness, float metallic, float ambientOcclusion)
 {
+    //float envR = max(roughness, 0.25);
+
     vec3 f0 = mix(vec3(0.04), albedo, metallic);
 
     float nDotV = max(dot(normal, viewDirection), 0.0);
     vec3 fresnel = FresnelSchlickRoughness(nDotV, f0, roughness);
+    //vec3 fresnel = FresnelSchlickRoughness(nDotV, f0, envR);
 
     vec3 reflectionDirection = reflect(-viewDirection, normal);
 
     float maxLod = float(textureQueryLevels(specularEnvironmentMap) - 1);
+    //vec3 prefilteredColor = textureLod(specularEnvironmentMap, reflectionDirection, envR * maxLod).rgb;
     vec3 prefilteredColor = textureLod(specularEnvironmentMap, reflectionDirection, roughness * maxLod).rgb;
 
+    //vec2 brdf = texture(brdfLUT, vec2(nDotV, envR)).rg;
     vec2 brdf = texture(brdfLUT, vec2(nDotV, roughness)).rg;
 
     vec3 specular = prefilteredColor * (fresnel * brdf.x + brdf.y);
@@ -302,6 +307,12 @@ void main()
     vec3 normal = normalize(normalValue);
 
     float depth = texture(gDepth, fragUV).r;
+
+    //float filteredRoughness = sqrt(sqrt(filteredAlpha2));
+    //float filteredRoughness = roughness;
+    //float filteredRoughness = normalVariance > 0.001 ? 1.0 : roughness;
+
+    //float depth = texture(gDepth, fragUV).r;
     vec4 clipPosition = vec4(fragUV * 2.0 - 1.0, depth, 1.0);
     vec4 worldPositionValue = frameData.viewProjectionInversed * clipPosition;
     vec3 worldPosition = worldPositionValue.xyz / worldPositionValue.w;
@@ -323,6 +334,7 @@ void main()
     vec3 color = ambient;
 
     color += CalculateEnvironmentSpecular(albedo, normal, viewDirection, roughness, metallic, ambientOcclusion);
+    //color += CalculateEnvironmentSpecular(albedo, normal, viewDirection, filteredRoughness, metallic, ambientOcclusion);
 
     uint lightCount = uint(frameData.lightInfo.x);
 
@@ -335,6 +347,7 @@ void main()
         {
             vec3 lightDirection = normalize(-light.direction.xyz);
             vec3 directionalColor = CalculateDirectionalLight(light, albedo, normal, viewDirection, roughness, metallic);
+            //vec3 directionalColor = CalculateDirectionalLight(light, albedo, normal, viewDirection, filteredRoughness, metallic);
 
             if (light.params.w > 0.5 && viewDepth <= frameData.directionalShadowSplits.w)
             {
@@ -364,10 +377,12 @@ void main()
         else if (lightType == LIGHT_POINT)
         {
             color += CalculatePointLight(light, albedo, normal, worldPosition, viewDirection, roughness, metallic);
+            //color += CalculatePointLight(light, albedo, normal, worldPosition, viewDirection, filteredRoughness, metallic);
         }
         else if (lightType == LIGHT_SPOT)
         {
             vec3 spotColor = CalculateSpotLight(light, albedo, normal, worldPosition, viewDirection, roughness, metallic);
+            //vec3 spotColor = CalculateSpotLight(light, albedo, normal, worldPosition, viewDirection, filteredRoughness, metallic);
 
             if (light.params.w > 0.5) spotColor *= CalculateSpotShadow(light, worldPosition, normal);
 

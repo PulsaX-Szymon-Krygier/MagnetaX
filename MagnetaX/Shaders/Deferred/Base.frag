@@ -28,6 +28,20 @@ void main()
     float metallic = material.properties.y;
     float ambientOcclusion = material.properties.z;
 
+    const float specularAAVariance = 0.25;
+    const float specularAAThreshold = 0.18;
+
+    vec3 normalDX = dFdx(normal);
+    vec3 normalDY = dFdy(normal);
+
+    float normalVariance = specularAAVariance * (dot(normalDX, normalDX) + dot(normalDY, normalDY));
+
+    float alpha = roughness * roughness;
+    float alpha2 = alpha * alpha;
+    float filteredAlpha2 = clamp(alpha2 + min(2.0 * normalVariance, specularAAThreshold * specularAAThreshold), 0.0, 1.0);
+
+    roughness = sqrt(sqrt(filteredAlpha2));
+
     outAlbedo = baseColor;
     outNormal = vec4(normal, 1.0);
     outMaterial = vec4(roughness, metallic, ambientOcclusion, 0.0);
