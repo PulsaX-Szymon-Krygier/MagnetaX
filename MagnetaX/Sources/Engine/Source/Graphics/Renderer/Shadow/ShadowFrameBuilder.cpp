@@ -142,16 +142,17 @@ namespace
 ShadowFrameData BuildShadowFrameData(const RenderSceneData& sceneData, const ShadowConfig& config)
 {
     ShadowFrameData shadowData{};
+    const RenderViewData& viewData = sceneData.viewData;
 
-    if (sceneData.cameraNearPlane <= 0.0f || sceneData.cameraFarPlane <= sceneData.cameraNearPlane) return shadowData;
+    if (viewData.nearPlane <= 0.0f || viewData.farPlane <= viewData.nearPlane) return shadowData;
 
     const int32 directionalLightIndex = FindDirectionalShadowLight(sceneData);
 
     if (directionalLightIndex != MX_GRAPHICS_INVALID_SHADOW_LIGHT_INDEX && config.directional.resolution > 0)
     {
-        const float32 shadowFarPlane = std::min(sceneData.cameraFarPlane, config.directional.distance);
+        const float32 shadowFarPlane = std::min(viewData.farPlane, config.directional.distance);
 
-        if (shadowFarPlane > sceneData.cameraNearPlane)
+        if (shadowFarPlane > viewData.nearPlane)
         {
             shadowData.directional.lightIndex = directionalLightIndex;
 
@@ -159,9 +160,9 @@ ShadowFrameData BuildShadowFrameData(const RenderSceneData& sceneData, const Sha
             const float32 splitLambda = std::clamp(config.directional.splitLambda, 0.0f, 1.0f);
             const float32 blendRatio = std::max(config.directional.cascadeBlendRatio, 0.0f);
 
-            shadowData.directional.splits = CalculateCascadeSplits(sceneData.cameraNearPlane, shadowFarPlane, splitLambda);
+            shadowData.directional.splits = CalculateCascadeSplits(viewData.nearPlane, shadowFarPlane, splitLambda);
 
-            const std::array<Vector3f, 8> frustumCorners = CalculateFrustumCornersWorldSpace(sceneData.viewProjectionInversed);
+            const std::array<Vector3f, 8> frustumCorners = CalculateFrustumCornersWorldSpace(viewData.invViewProj);
 
             Vector3f lightDirection = light.direction;
             lightDirection.Normalize();
@@ -171,7 +172,7 @@ ShadowFrameData BuildShadowFrameData(const RenderSceneData& sceneData, const Sha
 
             for (uint32 i = 0; i < MX_GRAPHICS_DIRECTIONAL_SHADOW_CASCADE_COUNT; ++i)
             {
-                const float32 cascadeNear = i == 0 ? sceneData.cameraNearPlane : shadowData.directional.splits[i - 1];
+                const float32 cascadeNear = i == 0 ? viewData.nearPlane : shadowData.directional.splits[i - 1];
                 const float32 cascadeFar = shadowData.directional.splits[i];
 
                 const float32 cascadeLength = cascadeFar - cascadeNear;
@@ -181,7 +182,7 @@ ShadowFrameData BuildShadowFrameData(const RenderSceneData& sceneData, const Sha
                 shadowData.directional.blendWidths[i] = cascadeRenderFar - cascadeFar;
 
                 const std::array<Vector3f, 8> cascadeCorners = CalculateCascadeFrustumCorners(
-                    frustumCorners, sceneData.cameraNearPlane, sceneData.cameraFarPlane, cascadeNear, cascadeRenderFar
+                    frustumCorners, viewData.nearPlane, viewData.farPlane, cascadeNear, cascadeRenderFar
                 );
 
                 const Vector3f shadowTarget = CalculateFrustumCenter(cascadeCorners);

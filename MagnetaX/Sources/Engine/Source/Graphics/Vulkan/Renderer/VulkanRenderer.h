@@ -24,6 +24,7 @@
 #include <span>
 #include <vector>
 #include <array>
+#include <unordered_map>
 
 class VulkanPresentContext;
 struct RenderSceneData;
@@ -179,8 +180,12 @@ private:
     VulkanTAAPass taaPass;
     uint64 taaFrameIndex = 0;
     uint32 taaHistoryReadIndex = 0;
+    bool prevFrameValid = false;
     bool taaHistoryValid = false;
     Matrix4f prevViewProj = Matrix4f::Identity();
+    Vector2f prevJitter{ 0.0f };
+    std::unordered_map<uint32, Matrix4f> prevObjectModels;
+    std::vector<Matrix4f> framePrevModels;
 
     // Tone mapping pass
     VulkanImage ldrColor;

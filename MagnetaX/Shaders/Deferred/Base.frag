@@ -4,6 +4,8 @@
 
 layout(location = 0) in vec3 fragNormal;
 layout(location = 1) in vec2 fragUV;
+layout(location = 2) in vec4 fragCurrentStableClip;
+layout(location = 3) in vec4 fragPrevStableClip;
 
 layout(set = 0, binding = 0) uniform sampler2D baseColorTexture;
 
@@ -17,6 +19,7 @@ layout(set = 0, binding = 1) uniform MaterialData
 layout(location = 0) out vec4 outAlbedo;
 layout(location = 1) out vec4 outNormal;
 layout(location = 2) out vec4 outMaterial;
+layout(location = 3) out vec2 outVelocity;
 
 void main()
 {
@@ -46,4 +49,9 @@ void main()
     outAlbedo = baseColor;
     outNormal = vec4(normal, 1.0);
     outMaterial = vec4(roughness, metallic, ambientOcclusion, 0.0);
+
+    vec2 currentStableNDC = fragCurrentStableClip.xy / fragCurrentStableClip.w;
+    vec2 prevStableNDC = fragPrevStableClip.xy / fragPrevStableClip.w;
+
+    outVelocity = currentStableNDC - prevStableNDC;
 }

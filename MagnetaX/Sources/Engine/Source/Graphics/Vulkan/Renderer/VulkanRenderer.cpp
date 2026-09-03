@@ -138,6 +138,7 @@ bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
     gBufferInfo.device = device;
     gBufferInfo.extent = extent;
     gBufferInfo.materialDescSetLayout = createInfo.materialDescSetLayout;
+    gBufferInfo.velocityEnabled = config.aa.mode == AAMode::TAA;
 
     if (!gBufferPass.Create(gBufferInfo))
     {
@@ -181,6 +182,7 @@ bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
         taaInfo.currentColor = &sceneColor;
         taaInfo.outFormat = taaHistory[0].GetFormat();
         taaInfo.depthImage = &gBufferPass.GetGBuffer().GetDepthImage();
+        taaInfo.velocityImage = &gBufferPass.GetGBuffer().GetVelocityImage();
 
         if (!taaPass.Create(taaInfo))
         {
@@ -386,8 +388,12 @@ void VulkanRenderer::Destroy()
     taaHistoryLayouts = { VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED };
     taaHistoryReadIndex = 0;
     taaFrameIndex = 0;
+    prevFrameValid = false;
     taaHistoryValid = false;
     prevViewProj = Matrix4f::Identity();
+    prevJitter = Vector2f(0.0f);
+    prevObjectModels.clear();
+    framePrevModels.clear();
 
     config = {};
     presentContext = nullptr;
@@ -473,9 +479,34 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
 
     spotShadowPass.Record(spotShadowInfo);
 
+    framePrevModels.clear();
+
+    if (config.aa.mode == AAMode::TAA)
+    {
+        framePrevModels.resize(drawItems.size());
+
+        for (usize i = 0; i < drawItems.size(); ++i)
+        {
+            const VulkanDrawItem& drawItem = drawItems[i];
+
+            Matrix4f prevModel = drawItem.model;
+
+            if (prevFrameValid && drawItem.id != 0)
+            {
+                const auto it = prevObjectModels.find(drawItem.id);
+                if (it != prevObjectModels.end()) prevModel = it->second;
+            }
+
+            framePrevModels[i] = prevModel;
+        }
+    }
+
     VulkanGBufferPassRenderInfo gBufferInfo{};
     gBufferInfo.cmdBuffer = cmdBuffer;
     gBufferInfo.drawItems = drawItems;
+    gBufferInfo.prevModels = framePrevModels;
+    gBufferInfo.viewData = &sceneData.viewData;
+    gBufferInfo.prevViewProj = prevFrameValid ? prevViewProj : sceneData.viewData.viewProj;
 
     gBufferPass.Record(gBufferInfo);
 
@@ -542,7 +573,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
 
         lightingPass.Record(lightingInfo);
 
-        const bool hasEnvironment = env.environmentView && env.environmentSampler && sceneData.hasCamera;
+        const bool hasEnvironment = env.environmentView && env.environmentSampler && sceneData.viewData.valid;
 
         if (hasEnvironment)
         {
@@ -628,18 +659,10 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
             taaInfo.historyView = taaHistoryRead.GetImageView();
             taaInfo.targetView = taaHistoryWrite.GetImageView();
             taaInfo.extent = extent;
-            taaInfo.historyWeight = 0.875f;
+            taaInfo.feedbackMin = config.aa.taa.feedbackMin;
+            taaInfo.feedbackMax = config.aa.taa.feedbackMax;
             taaInfo.historyValid = taaHistoryValid;
-
-            Matrix4f reprojection = Matrix4f::Identity();
-
-            if (taaHistoryValid)
-            {
-                reprojection = prevViewProj * sceneData.jitteredViewProjectionInversed;
-            }
-
-            taaInfo.reprojection = reprojection;
-            taaInfo.projectionJitter = sceneData.projectionJitter;
+            taaInfo.jitter = sceneData.viewData.jitter;
 
             taaPass.Record(taaInfo);
 
@@ -657,7 +680,6 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
 
             taaHistoryWriteLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-            prevViewProj = sceneData.viewProjection;
             taaHistoryReadIndex = taaHistoryWriteIndex;
             taaFrameIndex++;
             taaHistoryValid = true;
@@ -665,6 +687,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
         else
         {
             taaHistoryValid = false;
+            prevObjectModels.clear();
         }
 
         VkPipelineStageFlags2 ldrColorSrcStage = VK_PIPELINE_STAGE_2_NONE;
@@ -691,7 +714,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
         toneMapInfo.cmdBuffer = cmdBuffer;
         toneMapInfo.targetView = ldrColor.GetImageView();
         toneMapInfo.extent = extent;
-        toneMapInfo.exposureEV = sceneData.exposureEV;
+        toneMapInfo.exposureEV = sceneData.viewData.exposureEV;
         toneMapInfo.srcView = toneMapSourceView;
 
         toneMapPass.Record(toneMapInfo);
@@ -726,17 +749,25 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
         switch (debugView)
         {
         case GraphicsDebugView::NORMAL:
+        {
             gBufferView = GBufferDebugView::NORMAL;
             break;
-
+        }
         case GraphicsDebugView::MATERIAL:
+        {
             gBufferView = GBufferDebugView::MATERIAL;
             break;
-
+        }
+        case GraphicsDebugView::VELOCITY:
+        {
+            gBufferView = GBufferDebugView::VELOCITY;
+            break;
+        }
         case GraphicsDebugView::DEPTH:
+        {
             gBufferView = GBufferDebugView::DEPTH;
             break;
-
+        }
         default:
             break;
         }
@@ -748,6 +779,29 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
         gBufferDebugInfo.debugView = gBufferView;
 
         gBufferDebugPass.Record(gBufferDebugInfo);
+    }
+
+    if (config.aa.mode == AAMode::TAA && sceneData.viewData.valid)
+    {
+        prevViewProj = sceneData.viewData.viewProj;
+        prevJitter = sceneData.viewData.jitter;
+
+        prevObjectModels.clear();
+        prevObjectModels.reserve(drawItems.size());
+
+        for (const VulkanDrawItem& drawItem : drawItems)
+        {
+            if (drawItem.id == 0) continue;
+
+            prevObjectModels[drawItem.id] = drawItem.model;
+        }
+
+        prevFrameValid = true;
+    }
+    else
+    {
+        prevFrameValid = false;
+        prevObjectModels.clear();
     }
 
     if (displayColorUsedByUI)

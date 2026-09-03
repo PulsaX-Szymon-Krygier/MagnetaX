@@ -9,5 +9,6 @@ enum class GBufferDebugView : uint32
     ALBEDO = 0,
     NORMAL,
     MATERIAL,
+    VELOCITY,
     DEPTH
 };

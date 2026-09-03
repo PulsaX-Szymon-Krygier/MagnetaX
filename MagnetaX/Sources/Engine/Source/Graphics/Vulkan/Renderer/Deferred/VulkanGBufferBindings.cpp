@@ -18,9 +18,9 @@ bool VulkanGBufferBindings::Create(VulkanDevice* _device, VulkanGBuffer* gBuffer
 
     device = buffDevice;
 
-    VkDescriptorSetLayoutBinding bindings[4]{};
+    VkDescriptorSetLayoutBinding bindings[5]{};
 
-    for (uint32 i = 0; i < 4; ++i)
+    for (uint32 i = 0; i < 5; ++i)
     {
         bindings[i].binding = i;
         bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -28,7 +28,7 @@ bool VulkanGBufferBindings::Create(VulkanDevice* _device, VulkanGBuffer* gBuffer
         bindings[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     }
 
-    const VkDescriptorSetLayoutCreateInfo layoutInfo = VulkanInitializers::DescriptorSetLayoutCreateInfo(4, bindings);
+    const VkDescriptorSetLayoutCreateInfo layoutInfo = VulkanInitializers::DescriptorSetLayoutCreateInfo(5, bindings);
 
     if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descSetLayout) != VK_SUCCESS)
     {
@@ -55,7 +55,7 @@ bool VulkanGBufferBindings::Create(VulkanDevice* _device, VulkanGBuffer* gBuffer
 
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = 4;
+    poolSize.descriptorCount = 5;
 
     const VkDescriptorPoolCreateInfo poolInfo = VulkanInitializers::DescriptorPoolCreateInfo(1, 1, &poolSize);
 
@@ -73,23 +73,26 @@ bool VulkanGBufferBindings::Create(VulkanDevice* _device, VulkanGBuffer* gBuffer
         return false;
     }
 
-    VkDescriptorImageInfo imageInfos[4]{};
+    VkDescriptorImageInfo imageInfos[5]{};
 
-    for (uint32 i = 0; i < 4; ++i)
+    for (uint32 i = 0; i < 5; ++i)
     {
         imageInfos[i].sampler = sampler;
         imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     }
 
+    VkImageView velocityView = gBuffer->GetVelocityImage().GetImageView();
+
     imageInfos[0].imageView = gBuffer->GetAlbedoImage().GetImageView();
     imageInfos[1].imageView = gBuffer->GetNormalImage().GetImageView();
     imageInfos[2].imageView = gBuffer->GetMaterialImage().GetImageView();
-    imageInfos[3].imageView = gBuffer->GetDepthImage().GetImageView();
-    imageInfos[3].imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    imageInfos[3].imageView = velocityView ? velocityView : gBuffer->GetAlbedoImage().GetImageView();
+    imageInfos[4].imageView = gBuffer->GetDepthImage().GetImageView();
+    imageInfos[4].imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
-    VkWriteDescriptorSet writes[4]{};
+    VkWriteDescriptorSet writes[5]{};
 
-    for (uint32 i = 0; i < 4; ++i)
+    for (uint32 i = 0; i < 5; ++i)
     {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[i].dstSet = descSet;
@@ -99,7 +102,7 @@ bool VulkanGBufferBindings::Create(VulkanDevice* _device, VulkanGBuffer* gBuffer
         writes[i].pImageInfo = &imageInfos[i];
     }
 
-    vkUpdateDescriptorSets(device, 4, writes, 0, nullptr);
+    vkUpdateDescriptorSets(device, 5, writes, 0, nullptr);
 
     return true;
 }

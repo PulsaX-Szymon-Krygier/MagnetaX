@@ -148,8 +148,8 @@ void VulkanSkyPass::Record(const VulkanSkyPassRenderInfo& renderInfo)
 
     SkyPushConstants pushConstants{};
     //pushConstants.viewProjectionInversed = sceneData.viewProjectionInversed.Transposed();
-    pushConstants.viewProjectionInversed = sceneData.jitteredViewProjectionInversed.Transposed();
-    pushConstants.cameraPosition = Vector4f(sceneData.cameraPosition, 1.0f);
+    pushConstants.viewProjectionInversed = sceneData.viewData.invJitteredViewProj.Transposed();
+    pushConstants.cameraPosition = Vector4f(sceneData.viewData.position, 1.0f);
 
     VkRenderingAttachmentInfo colorAttachment{};
     colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;

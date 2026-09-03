@@ -37,4 +37,6 @@ public:
 private:
     VulkanPipeline pipeline;
     VulkanGBufferBindings gBufferBindings;
+
+    bool velocityAvailable = false;
 };

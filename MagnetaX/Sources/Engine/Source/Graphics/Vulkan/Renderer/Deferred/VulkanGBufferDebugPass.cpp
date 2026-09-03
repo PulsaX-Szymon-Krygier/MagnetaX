@@ -8,6 +8,15 @@
 #include <Graphics/Vulkan/VulkanDevice.h>
 #include "VulkanGBuffer.h"
 
+namespace
+{
+    struct DebugPushConst
+    {
+        uint32 debugView = 0;
+        uint32 velocityAvailable = 0;
+    };
+}
+
 bool VulkanGBufferDebugPass::Create(const VulkanGBufferDebugPassCreateInfo& createInfo)
 {
     if (!createInfo.device || !createInfo.gBuffer) return false;
@@ -24,10 +33,12 @@ bool VulkanGBufferDebugPass::Create(const VulkanGBufferDebugPassCreateInfo& crea
         return false;
     }
 
+    velocityAvailable = createInfo.gBuffer->GetVelocityImage().GetImageView() != VK_NULL_HANDLE;
+
     VkPushConstantRange pushConstRange{};
     pushConstRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     pushConstRange.offset = 0;
-    pushConstRange.size = sizeof(uint32);
+    pushConstRange.size = sizeof(DebugPushConst);
 
     const VkDescriptorSetLayout descSetLayout = gBufferBindings.GetDescriptorSetLayout();
 
@@ -56,6 +67,8 @@ void VulkanGBufferDebugPass::Destroy()
 {
     pipeline.Destroy();
     gBufferBindings.Destroy();
+
+    velocityAvailable = false;
 }
 
 void VulkanGBufferDebugPass::Record(const VulkanGBufferDebugPassRenderInfo& renderInfo)
@@ -102,10 +115,11 @@ void VulkanGBufferDebugPass::Record(const VulkanGBufferDebugPassRenderInfo& rend
     vkCmdBindDescriptorSets(renderInfo.cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.GetPipelineLayout(),
         0, 1, &descSet, 0, nullptr);
 
-    const uint32 debugViewValue = (uint32)renderInfo.debugView;
+    DebugPushConst debugPC{};
+    debugPC.debugView = (uint32)renderInfo.debugView;
+    debugPC.velocityAvailable = velocityAvailable ? 1u : 0u;
 
-    vkCmdPushConstants(renderInfo.cmdBuffer, pipeline.GetPipelineLayout(), VK_SHADER_STAGE_FRAGMENT_BIT,
-        0, sizeof(uint32), &debugViewValue);
+    vkCmdPushConstants(renderInfo.cmdBuffer, pipeline.GetPipelineLayout(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(DebugPushConst), &debugPC);
 
     vkCmdDraw(renderInfo.cmdBuffer, 3, 1, 0, 0);
 

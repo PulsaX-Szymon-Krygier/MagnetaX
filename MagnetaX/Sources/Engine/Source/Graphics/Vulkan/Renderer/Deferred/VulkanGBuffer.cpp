@@ -3,19 +3,19 @@
 #include "VulkanGBuffer.h"
 
 #if MX_GRAPHICS_VULKAN
-bool VulkanGBuffer::Create(VulkanDevice* _device, VkExtent2D _extent)
+bool VulkanGBuffer::Create(const VulkanGBufferCreateInfo& createInfo)
 {
-    if (!_device || _extent.width == 0 || _extent.height == 0) return false;
+    if (!createInfo.device || createInfo.extent.width == 0 || createInfo.extent.height == 0) return false;
 
     Destroy();
 
-    extent = _extent;
+    extent = createInfo.extent;
 
     const VkImageUsageFlags colorUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     const VkImageUsageFlags depthUsage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 
     VulkanImageCreateInfo imageInfo{};
-    imageInfo.device = _device;
+    imageInfo.device = createInfo.device;
     imageInfo.extent = extent;
     imageInfo.usage = colorUsage;
 
@@ -40,6 +40,17 @@ bool VulkanGBuffer::Create(VulkanDevice* _device, VkExtent2D _extent)
         return false;
     }
 
+    if (createInfo.createVelocity)
+    {
+        imageInfo.format = ImageFormat::RG16_FLOAT;
+
+        if (!velocityImage.Create(imageInfo))
+        {
+            Destroy();
+            return false;
+        }
+    }
+
     imageInfo.format = ImageFormat::D32_FLOAT;
     imageInfo.usage = depthUsage;
     if (!depthImage.Create(imageInfo))
@@ -56,6 +67,7 @@ void VulkanGBuffer::Destroy()
     depthImage.Destroy();
     materialImage.Destroy();
     normalImage.Destroy();
+    velocityImage.Destroy();
     albedoImage.Destroy();
 
     extent = {};

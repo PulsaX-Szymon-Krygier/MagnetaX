@@ -298,7 +298,7 @@ void VulkanGraphicsSystem::RenderScene(Scene* scene, AssetManager* assetManager,
                 }
             }
 
-            drawItems.push_back({ mesh, material, object.mvp, object.model });
+            drawItems.push_back({ mesh, material, object.mvp, object.model, object.id });
         }
     }
 

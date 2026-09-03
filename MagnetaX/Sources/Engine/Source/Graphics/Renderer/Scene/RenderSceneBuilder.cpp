@@ -66,18 +66,22 @@ RenderSceneData BuildRenderSceneData(Scene* scene, const Size2i& renderSize, con
     const Matrix4f viewProjMatrix = projectionMatrix * viewMatrix;
     const Matrix4f jitteredViewProjMatrix = jitteredProjectionMatrix * viewMatrix;
 
-    sceneData.view = viewMatrix;
-    sceneData.viewProjection = viewProjMatrix;
-    sceneData.viewProjectionInversed = viewProjMatrix.Inversed();
-    sceneData.jitteredViewProjection = jitteredViewProjMatrix;
-    sceneData.jitteredViewProjectionInversed = jitteredViewProjMatrix.Inversed();
-    sceneData.projectionJitter = projectionJitter;
+    sceneData.viewData.view = viewMatrix;
+    sceneData.viewData.proj = projectionMatrix;
+    sceneData.viewData.viewProj = viewProjMatrix;
+    sceneData.viewData.invViewProj = viewProjMatrix.Inversed();
 
-    sceneData.hasCamera = true;
-    sceneData.cameraPosition = Vector3f(cameraWorldMatrix.m03, cameraWorldMatrix.m13, cameraWorldMatrix.m23);
-    sceneData.cameraNearPlane = cameraComponent->nearPlane;
-    sceneData.cameraFarPlane = cameraComponent->farPlane;
-    sceneData.exposureEV = cameraComponent->exposureEV;
+    sceneData.viewData.jitteredProj = jitteredProjectionMatrix;
+    sceneData.viewData.jitteredViewProj = jitteredViewProjMatrix;
+    sceneData.viewData.invJitteredViewProj = jitteredViewProjMatrix.Inversed();
+
+    sceneData.viewData.jitter = projectionJitter;
+
+    sceneData.viewData.position = Vector3f(cameraWorldMatrix.m03, cameraWorldMatrix.m13, cameraWorldMatrix.m23);
+    sceneData.viewData.nearPlane = cameraComponent->nearPlane;
+    sceneData.viewData.farPlane = cameraComponent->farPlane;
+    sceneData.viewData.exposureEV = cameraComponent->exposureEV;
+    sceneData.viewData.valid = true;
 
     scene->ForEach<MeshComponent>(
         [&](Entity entity, MeshComponent& meshComponent)
@@ -88,6 +92,7 @@ RenderSceneData BuildRenderSceneData(Scene* scene, const Size2i& renderSize, con
             object.mesh = meshComponent.mesh;
             object.model = entity.GetWorldMatrix();
             object.mvp = jitteredViewProjMatrix * object.model;
+            object.id = entity.GetID();
 
             MaterialComponent* materialComponent = entity.GetComponent<MaterialComponent>();
 

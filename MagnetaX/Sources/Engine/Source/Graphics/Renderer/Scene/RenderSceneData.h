@@ -9,6 +9,7 @@
 #include <MX/Assets/Texture/TextureAsset.h>
 #include "RenderLight.h"
 #include "RenderObject.h"
+#include "RenderViewData.h"
 #include <vector>
 
 struct RenderSceneData
@@ -18,22 +19,10 @@ struct RenderSceneData
     Vector3f ambientLightColor{ 1.0f };
     float32 ambientLightIntensity = 0.1f;
 
-    Matrix4f view = Matrix4f::Identity();
-    Matrix4f viewProjection = Matrix4f::Identity();
-    Matrix4f viewProjectionInversed = Matrix4f::Identity();
-    Matrix4f jitteredViewProjectionInversed = Matrix4f::Identity();
-    Matrix4f jitteredViewProjection = Matrix4f::Identity();
-
-    Vector2f projectionJitter{ 0.0f };
-
-    bool hasCamera = false;
-    Vector3f cameraPosition{ 0.0f };
-    float32 cameraNearPlane = 0.1f;
-    float32 cameraFarPlane = 1000.0f;
-    float32 exposureEV = 0.0f;
-
     std::vector<RenderLight> lights;
     std::vector<RenderObject> objects;
 
     AssetHandle<TextureAsset> environmentMap;
+
+    RenderViewData viewData{};
 };

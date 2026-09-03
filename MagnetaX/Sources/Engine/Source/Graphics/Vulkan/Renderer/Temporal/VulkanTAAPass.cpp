@@ -4,7 +4,7 @@
 
 #if MX_GRAPHICS_VULKAN
 #include <MX/Generated/Shaders/Common/VulkanShaderFullscreenVert.h>
-#include <MX/Generated/Shaders/PostFX/VulkanShaderTAAFrag.h>
+#include <MX/Generated/Shaders/Temporal/VulkanShaderTAAFrag.h>
 #include <Graphics/Vulkan/VulkanDevice.h>
 #include <Graphics/Vulkan/VulkanInitializers.h>
 #include <Graphics/Vulkan/Resources/VulkanImage.h>
@@ -13,18 +13,19 @@ namespace
 {
     struct TAAPushConstants
     {
-        Matrix4f reprojection;
-        Vector2f projectionJitter;
-        float32 historyWeight;
+        Vector2f jitter;
+        float32 feedbackMin;
+        float32 feedbackMax;
         uint32 historyValid;
     };
 }
 
 bool VulkanTAAPass::Create(const VulkanTAAPassCreateInfo& createInfo)
 {
-    if (!createInfo.device || !createInfo.currentColor || !createInfo.depthImage) return false;
+    if (!createInfo.device || !createInfo.currentColor || !createInfo.velocityImage || !createInfo.depthImage) return false;
+    if (!createInfo.currentColor->GetImageView()) return false;
+    if (!createInfo.velocityImage->GetImageView() || !createInfo.depthImage->GetImageView()) return false;
     if (createInfo.outFormat == VK_FORMAT_UNDEFINED) return false;
-    if (!createInfo.currentColor->GetImageView() || !createInfo.depthImage->GetImageView()) return false;
 
     const VkDevice buffDevice = createInfo.device->GetDevice();
     if (!buffDevice) return false;
@@ -33,7 +34,7 @@ bool VulkanTAAPass::Create(const VulkanTAAPassCreateInfo& createInfo)
 
     device = buffDevice;
 
-    VkDescriptorSetLayoutBinding bindings[3]{};
+    VkDescriptorSetLayoutBinding bindings[4]{};
 
     bindings[0].binding = 0;
     bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -50,7 +51,12 @@ bool VulkanTAAPass::Create(const VulkanTAAPassCreateInfo& createInfo)
     bindings[2].descriptorCount = 1;
     bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    const VkDescriptorSetLayoutCreateInfo layoutInfo = VulkanInitializers::DescriptorSetLayoutCreateInfo(3, bindings);
+    bindings[3].binding = 3;
+    bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[3].descriptorCount = 1;
+    bindings[3].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    const VkDescriptorSetLayoutCreateInfo layoutInfo = VulkanInitializers::DescriptorSetLayoutCreateInfo(4, bindings);
 
     if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descSetLayout) != VK_SUCCESS)
     {
@@ -78,7 +84,7 @@ bool VulkanTAAPass::Create(const VulkanTAAPassCreateInfo& createInfo)
 
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = 3;
+    poolSize.descriptorCount = 4;
 
     const VkDescriptorPoolCreateInfo poolInfo = VulkanInitializers::DescriptorPoolCreateInfo(1, 1, &poolSize);
 
@@ -96,7 +102,7 @@ bool VulkanTAAPass::Create(const VulkanTAAPassCreateInfo& createInfo)
         return false;
     }
 
-    VkDescriptorImageInfo imageInfos[3]{};
+    VkDescriptorImageInfo imageInfos[4]{};
 
     imageInfos[0].sampler = sampler;
     imageInfos[0].imageView = createInfo.currentColor->GetImageView();
@@ -107,10 +113,14 @@ bool VulkanTAAPass::Create(const VulkanTAAPassCreateInfo& createInfo)
     imageInfos[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     imageInfos[2].sampler = sampler;
-    imageInfos[2].imageView = createInfo.depthImage->GetImageView();
-    imageInfos[2].imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    imageInfos[2].imageView = createInfo.velocityImage->GetImageView();
+    imageInfos[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    VkWriteDescriptorSet writeSets[3]{};
+    imageInfos[3].sampler = sampler;
+    imageInfos[3].imageView = createInfo.depthImage->GetImageView();
+    imageInfos[3].imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+
+    VkWriteDescriptorSet writeSets[4]{};
 
     writeSets[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     writeSets[0].dstSet = descSet;
@@ -133,7 +143,14 @@ bool VulkanTAAPass::Create(const VulkanTAAPassCreateInfo& createInfo)
     writeSets[2].descriptorCount = 1;
     writeSets[2].pImageInfo = &imageInfos[2];
 
-    vkUpdateDescriptorSets(device, 3, writeSets, 0, nullptr);
+    writeSets[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writeSets[3].dstSet = descSet;
+    writeSets[3].dstBinding = 3;
+    writeSets[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writeSets[3].descriptorCount = 1;
+    writeSets[3].pImageInfo = &imageInfos[3];
+
+    vkUpdateDescriptorSets(device, 4, writeSets, 0, nullptr);
 
     VkPushConstantRange pushConstRange{};
     pushConstRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
@@ -237,10 +254,10 @@ void VulkanTAAPass::Record(const VulkanTAAPassRenderInfo& renderInfo)
     vkCmdBindPipeline(renderInfo.cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.GetPipeline());
 
     TAAPushConstants pushConstants{};
-    pushConstants.historyWeight = renderInfo.historyWeight;
+    pushConstants.feedbackMin = renderInfo.feedbackMin;
+    pushConstants.feedbackMax = renderInfo.feedbackMax;
     pushConstants.historyValid = renderInfo.historyValid ? 1u : 0u;
-    pushConstants.reprojection = renderInfo.reprojection.Transposed();
-    pushConstants.projectionJitter = renderInfo.projectionJitter;
+    pushConstants.jitter = renderInfo.jitter;
 
     vkCmdPushConstants(renderInfo.cmdBuffer, pipeline.GetPipelineLayout(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(TAAPushConstants), &pushConstants);
     vkCmdBindDescriptorSets(renderInfo.cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.GetPipelineLayout(), 0, 1, &descSet, 0, nullptr);

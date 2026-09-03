@@ -11,6 +11,8 @@ struct VulkanTAAPassCreateInfo : VulkanPassCreateInfo
 {
     VulkanImage* currentColor = nullptr;
     VkFormat outFormat = VK_FORMAT_UNDEFINED;
+
+    const VulkanImage* velocityImage = nullptr;
     const VulkanImage* depthImage = nullptr;
 };
 
@@ -19,10 +21,12 @@ struct VulkanTAAPassRenderInfo : VulkanPassRenderInfo
     VkImageView historyView = VK_NULL_HANDLE;
     VkImageView targetView = VK_NULL_HANDLE;
     VkExtent2D extent{};
-    float32 historyWeight = 0.875f;
+
+    Vector2f jitter{};
+    float32 feedbackMin = 0.88f;
+    float32 feedbackMax = 0.97f;
+
     bool historyValid = false;
-    Matrix4f reprojection = Matrix4f::Identity();
-    Vector2f projectionJitter{};
 };
 
 class VulkanTAAPass

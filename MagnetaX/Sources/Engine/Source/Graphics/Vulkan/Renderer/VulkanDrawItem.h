@@ -16,4 +16,6 @@ struct VulkanDrawItem
 
     Matrix4f mvp;
     Matrix4f model;
+
+    uint32 id = 0;
 };

@@ -14,4 +14,6 @@ struct RenderObject
 
     Matrix4f model = Matrix4f::Identity();
     Matrix4f mvp = Matrix4f::Identity();
+
+    uint32 id = 0;
 };

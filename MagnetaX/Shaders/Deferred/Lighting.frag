@@ -8,7 +8,7 @@ layout(location = 0) in vec2 fragUV;
 layout(set = 0, binding = 0) uniform sampler2D gAlbedo;
 layout(set = 0, binding = 1) uniform sampler2D gNormal;
 layout(set = 0, binding = 2) uniform sampler2D gMaterial;
-layout(set = 0, binding = 3) uniform sampler2D gDepth;
+layout(set = 0, binding = 4) uniform sampler2D gDepth;
 
 // Frame data
 layout(set = 1, binding = 0) uniform FrameData
@@ -99,21 +99,16 @@ vec3 FresnelSchlickRoughness(float cosTheta, vec3 f0, float roughness)
 
 vec3 CalculateEnvironmentSpecular(vec3 albedo, vec3 normal, vec3 viewDirection, float roughness, float metallic, float ambientOcclusion)
 {
-    //float envR = max(roughness, 0.25);
-
     vec3 f0 = mix(vec3(0.04), albedo, metallic);
 
     float nDotV = max(dot(normal, viewDirection), 0.0);
     vec3 fresnel = FresnelSchlickRoughness(nDotV, f0, roughness);
-    //vec3 fresnel = FresnelSchlickRoughness(nDotV, f0, envR);
 
     vec3 reflectionDirection = reflect(-viewDirection, normal);
 
     float maxLod = float(textureQueryLevels(specularEnvironmentMap) - 1);
-    //vec3 prefilteredColor = textureLod(specularEnvironmentMap, reflectionDirection, envR * maxLod).rgb;
     vec3 prefilteredColor = textureLod(specularEnvironmentMap, reflectionDirection, roughness * maxLod).rgb;
 
-    //vec2 brdf = texture(brdfLUT, vec2(nDotV, envR)).rg;
     vec2 brdf = texture(brdfLUT, vec2(nDotV, roughness)).rg;
 
     vec3 specular = prefilteredColor * (fresnel * brdf.x + brdf.y);
@@ -150,7 +145,6 @@ vec3 CalculatePBRBRDF(vec3 albedo, vec3 normal, vec3 viewDirection, vec3 lightDi
     vec3 diffuse = kD * albedo / PI;
 
     return diffuse + specular;
-    //return diffuse;
 }
 
 float CalculateDistanceAttenuation(float distanceToLight, float range)
@@ -291,8 +285,6 @@ void main()
     vec3 material = texture(gMaterial, fragUV).rgb;
 
     float roughness = clamp(material.r, 0.04, 1.0);
-    //float roughness = clamp(material.r, 0.15, 1.0);
-    //float roughness = 1.0;
     float metallic = clamp(material.g, 0.0, 1.0);
     float ambientOcclusion = clamp(material.b, 0.0, 1.0);
 
@@ -308,11 +300,6 @@ void main()
 
     float depth = texture(gDepth, fragUV).r;
 
-    //float filteredRoughness = sqrt(sqrt(filteredAlpha2));
-    //float filteredRoughness = roughness;
-    //float filteredRoughness = normalVariance > 0.001 ? 1.0 : roughness;
-
-    //float depth = texture(gDepth, fragUV).r;
     vec4 clipPosition = vec4(fragUV * 2.0 - 1.0, depth, 1.0);
     vec4 worldPositionValue = frameData.viewProjectionInversed * clipPosition;
     vec3 worldPosition = worldPositionValue.xyz / worldPositionValue.w;
@@ -334,7 +321,6 @@ void main()
     vec3 color = ambient;
 
     color += CalculateEnvironmentSpecular(albedo, normal, viewDirection, roughness, metallic, ambientOcclusion);
-    //color += CalculateEnvironmentSpecular(albedo, normal, viewDirection, filteredRoughness, metallic, ambientOcclusion);
 
     uint lightCount = uint(frameData.lightInfo.x);
 
@@ -347,7 +333,6 @@ void main()
         {
             vec3 lightDirection = normalize(-light.direction.xyz);
             vec3 directionalColor = CalculateDirectionalLight(light, albedo, normal, viewDirection, roughness, metallic);
-            //vec3 directionalColor = CalculateDirectionalLight(light, albedo, normal, viewDirection, filteredRoughness, metallic);
 
             if (light.params.w > 0.5 && viewDepth <= frameData.directionalShadowSplits.w)
             {
@@ -377,12 +362,10 @@ void main()
         else if (lightType == LIGHT_POINT)
         {
             color += CalculatePointLight(light, albedo, normal, worldPosition, viewDirection, roughness, metallic);
-            //color += CalculatePointLight(light, albedo, normal, worldPosition, viewDirection, filteredRoughness, metallic);
         }
         else if (lightType == LIGHT_SPOT)
         {
             vec3 spotColor = CalculateSpotLight(light, albedo, normal, worldPosition, viewDirection, roughness, metallic);
-            //vec3 spotColor = CalculateSpotLight(light, albedo, normal, worldPosition, viewDirection, filteredRoughness, metallic);
 
             if (light.params.w > 0.5) spotColor *= CalculateSpotShadow(light, worldPosition, normal);
 

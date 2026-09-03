@@ -10,5 +10,6 @@ enum class GraphicsDebugView : uint32
     ALBEDO,
     NORMAL,
     MATERIAL,
+    VELOCITY,
     DEPTH
 };
