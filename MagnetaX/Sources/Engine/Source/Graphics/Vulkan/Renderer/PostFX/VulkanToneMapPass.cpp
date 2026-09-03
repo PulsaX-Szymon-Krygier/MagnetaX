@@ -146,7 +146,6 @@ void VulkanToneMapPass::Record(const VulkanToneMapPassRenderInfo& renderInfo)
 {
     if (!renderInfo.cmdBuffer || !renderInfo.targetView) return;
     if (renderInfo.extent.width == 0 || renderInfo.extent.height == 0) return;
-    if (!renderInfo.targetView) return;
 
     VkDescriptorImageInfo imageInfo{};
     imageInfo.sampler = sampler;
