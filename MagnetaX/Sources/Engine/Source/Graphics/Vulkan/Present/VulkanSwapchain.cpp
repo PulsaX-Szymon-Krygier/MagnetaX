@@ -12,14 +12,33 @@ namespace
 {
     VkSurfaceFormatKHR ChooseSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& formats)
     {
-        if (formats.size() == 1 && formats[0].format == VK_FORMAT_UNDEFINED) return { VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
+        if (formats.size() == 1 && formats[0].format == VK_FORMAT_UNDEFINED)
+        {
+            if (formats[0].colorSpace != VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+            {
+                return { VK_FORMAT_UNDEFINED, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
+            }
+
+            return { VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
+        }
 
         for (const VkSurfaceFormatKHR& format : formats)
         {
-            if (format.format == VK_FORMAT_B8G8R8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) return format;
+            if (format.format == VK_FORMAT_B8G8R8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+            {
+                return format;
+            }
         }
 
-        return formats[0];
+        for (const VkSurfaceFormatKHR& format : formats)
+        {
+            if (format.format == VK_FORMAT_R8G8B8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+            {
+                return format;
+            }
+        }
+
+        return { VK_FORMAT_UNDEFINED, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
     }
 
     VkPresentModeKHR ChoosePresentMode(const std::vector<VkPresentModeKHR>& presentModes)
@@ -118,6 +137,8 @@ bool VulkanSwapchain::Create(const VulkanSwapchainCreateInfo& createInfo)
     const VkPresentModeKHR presentMode = ChoosePresentMode(presentModes);
     const VkExtent2D swapchainExtent = ChooseExtent(surfaceCaps, createInfo.extent);
 
+    if (surfaceFormat.format == VK_FORMAT_UNDEFINED) return false;
+    if (surfaceFormat.colorSpace != VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) return false;
     if (swapchainExtent.width == 0 || swapchainExtent.height == 0) return false;
 
     uint32 imageCount = surfaceCaps.minImageCount + 1;

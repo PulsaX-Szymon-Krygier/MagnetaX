@@ -52,9 +52,11 @@ bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
 
     const VkExtent2D extent = swapchain.GetExtent();
     const VkFormat swapchainFormat = swapchain.GetFormat();
+    ImageFormat displayColorFormat = VulkanImageFormat::ToImageFormat(swapchainFormat);
 
     if (extent.width == 0 || extent.height == 0) return false;
     if (swapchainFormat == VK_FORMAT_UNDEFINED || swapchain.GetImages().empty()) return false;
+    if (displayColorFormat != ImageFormat::BGRA8_SRGB && displayColorFormat != ImageFormat::RGBA8_SRGB) return false;
     if (createInfo.config.shadows.directional.resolution == 0 || createInfo.config.shadows.spot.resolution == 0) return false;
 
     Destroy();
@@ -202,7 +204,7 @@ bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
     VulkanImageCreateInfo displayColorInfo{};
     displayColorInfo.device = device;
     displayColorInfo.extent = extent;
-    displayColorInfo.format = VulkanImageFormat::ToImageFormat(swapchainFormat);
+    displayColorInfo.format = displayColorFormat;
     displayColorInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 
     if (!displayColor.Create(displayColorInfo))
