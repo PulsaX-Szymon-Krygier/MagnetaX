@@ -712,6 +712,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
         postFXInfo.cmdBuffer = cmdBuffer;
         postFXInfo.targetView = displayTarget.GetImageView();
         postFXInfo.extent = extent;
+        postFXInfo.fxaaEnabled = config.aa.mode == AAMode::FXAA;
         postFXInfo.fxaaConfig = config.aa.fxaa;
 
         postFXPass.Record(postFXInfo);
