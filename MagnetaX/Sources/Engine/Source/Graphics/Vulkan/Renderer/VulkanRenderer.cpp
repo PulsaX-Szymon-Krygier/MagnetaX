@@ -13,6 +13,34 @@
 #include "../VulkanInitializers.h"
 #include <array>
 
+namespace
+{
+    float32 Halton(uint32 index, uint32 base)
+    {
+        float32 result = 0.0f;
+        float32 fraction = 1.0f;
+
+        while (index > 0)
+        {
+            fraction /= (float32)base;
+            result += fraction * (float32)(index % base);
+            index /= base;
+        }
+
+        return result;
+    }
+
+    Vector2f CalculateTAAJitter(uint64 frameIndex, VkExtent2D extent)
+    {
+        const uint32 sampleIndex = (uint32)(frameIndex % 8) + 1;
+
+        const float32 jitterX = Halton(sampleIndex, 2) - 0.5f;
+        const float32 jitterY = Halton(sampleIndex, 3) - 0.5f;
+
+        return Vector2f(2.0f * jitterX / (float32)extent.width, 2.0f * jitterY / (float32)extent.height);
+    }
+}
+
 bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
 {
     if (!createInfo.device || !createInfo.presentContext || !createInfo.materialDescSetLayout || !createInfo.uiRenderer) return false;
@@ -129,31 +157,34 @@ bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
         return false;
     }
 
-    VulkanImageCreateInfo taaHistoryInfo{};
-    taaHistoryInfo.device = device;
-    taaHistoryInfo.extent = extent;
-    taaHistoryInfo.format = ImageFormat::RGBA16_FLOAT;
-    taaHistoryInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-
-    for (VulkanImage& history : taaHistory)
+    if (config.taa.enabled)
     {
-        if (!history.Create(taaHistoryInfo))
+        VulkanImageCreateInfo taaHistoryInfo{};
+        taaHistoryInfo.device = device;
+        taaHistoryInfo.extent = extent;
+        taaHistoryInfo.format = ImageFormat::RGBA16_FLOAT;
+        taaHistoryInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+        for (VulkanImage& history : taaHistory)
+        {
+            if (!history.Create(taaHistoryInfo))
+            {
+                Destroy();
+                return false;
+            }
+        }
+
+        VulkanTAAPassCreateInfo taaInfo{};
+        taaInfo.device = device;
+        taaInfo.currentColor = &sceneColor;
+        taaInfo.outFormat = taaHistory[0].GetFormat();
+        taaInfo.depthImage = &gBufferPass.GetGBuffer().GetDepthImage();
+
+        if (!taaPass.Create(taaInfo))
         {
             Destroy();
             return false;
         }
-    }
-
-    VulkanTAAPassCreateInfo taaInfo{};
-    taaInfo.device = device;
-    taaInfo.currentColor = &sceneColor;
-    taaInfo.outFormat = taaHistory[0].GetFormat();
-    taaInfo.depthImage = &gBufferPass.GetGBuffer().GetDepthImage();
-
-    if (!taaPass.Create(taaInfo))
-    {
-        Destroy();
-        return false;
     }
 
     VulkanImageCreateInfo ldrColorInfo{};
@@ -244,7 +275,7 @@ bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
 
     VulkanToneMapPassCreateInfo toneMapInfo{};
     toneMapInfo.device = device;
-    toneMapInfo.srcImage = &taaHistory[0];
+    toneMapInfo.srcImage = config.taa.enabled ? &taaHistory[0] : &sceneColor;
     toneMapInfo.outFormat = ldrColor.GetFormat();
 
     if (!toneMapPass.Create(toneMapInfo))
@@ -352,6 +383,7 @@ void VulkanRenderer::Destroy()
 
     taaHistoryLayouts = { VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED };
     taaHistoryReadIndex = 0;
+    taaFrameIndex = 0;
     taaHistoryValid = false;
     prevViewProj = Matrix4f::Identity();
 
@@ -545,14 +577,9 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
 
         sceneColorLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-        // Expermiental TAA
-        // If you enable there u need to also
-        // enable in VulkanGraphicsSystem.cpp
-        bool taaEnabled = false;
-
         VkImageView toneMapSourceView = sceneColor.GetImageView();
 
-        if (taaEnabled)
+        if (config.taa.enabled)
         {
             const uint32 taaHistoryWriteIndex = 1u - taaHistoryReadIndex;
 
@@ -630,6 +657,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
 
             prevViewProj = sceneData.viewProjection;
             taaHistoryReadIndex = taaHistoryWriteIndex;
+            taaFrameIndex++;
             taaHistoryValid = true;
         }
         else
@@ -823,5 +851,14 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
     if (presentResult != VK_SUCCESS) return VulkanFrameResult::FAILED;
 
     return suboptimal ? VulkanFrameResult::RECREATE : VulkanFrameResult::SUCCESS;
+}
+
+Vector2f VulkanRenderer::GetProjectionJitter(VkExtent2D extent) const
+{
+    if (!config.taa.enabled) return Vector2f(0.0f);
+    if (debugView != GraphicsDebugView::FINAL) return Vector2f(0.0f);
+    if (extent.width == 0 || extent.height == 0) return Vector2f(0.0f);
+
+    return CalculateTAAJitter(taaFrameIndex, extent);
 }
 #endif

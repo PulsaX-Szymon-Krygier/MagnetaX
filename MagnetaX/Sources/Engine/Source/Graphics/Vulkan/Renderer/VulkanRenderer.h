@@ -3,6 +3,7 @@
 #pragma once
 
 #include <MX/Core/Math/Matrix.h>
+#include <MX/Core/Math/Vector.h>
 #include <MX/Graphics/GraphicsDebugView.h>
 #include <MX/Graphics/Renderer/RendererConfig.h>
 #include <MX/Graphics/Renderer/UI/UITexture.h>
@@ -93,10 +94,10 @@ struct VulkanRendererFrameInfo
 //          v                     |
 //   sceneColor (HDR)             |
 //          |                     |
-//    TAA (taaPass)               |
+//    TAA (taaPass)*              |
 //          |                     |
 //          v                     |
-//     TAA history                |
+// temporal/sceneColor            |
 //          |                     |
 //   Tone mapping                 |
 //   (toneMapPass)                |
@@ -120,6 +121,8 @@ struct VulkanRendererFrameInfo
 //                     v
 //                  Present
 //
+// * - optional pass (only if enabled) 
+// 
 // sceneColor is the HDR scene result
 // produced by lighting and sky
 // 
@@ -142,6 +145,8 @@ public:
     VulkanFrameResult DrawFrame(const VulkanRendererFrameInfo& frameInfo);
 
     void SetDebugView(GraphicsDebugView view) { debugView = view; }
+
+    Vector2f GetProjectionJitter(VkExtent2D extent) const;
 
 private:
     VulkanDevice* device = nullptr;
@@ -172,6 +177,7 @@ private:
     std::array<VulkanImage, 2> taaHistory;
     std::array<VkImageLayout, 2> taaHistoryLayouts{ VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED };
     VulkanTAAPass taaPass;
+    uint64 taaFrameIndex = 0;
     uint32 taaHistoryReadIndex = 0;
     bool taaHistoryValid = false;
     Matrix4f prevViewProj = Matrix4f::Identity();
