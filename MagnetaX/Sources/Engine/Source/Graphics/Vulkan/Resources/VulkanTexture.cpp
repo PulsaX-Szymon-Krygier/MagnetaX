@@ -4,6 +4,7 @@
 
 #if MX_GRAPHICS_VULKAN
 #include "VulkanBuffer.h"
+#include "VulkanImageFormat.h"
 #include "../VulkanDevice.h"
 #include "../VulkanInitializers.h"
 #include <algorithm>
@@ -43,10 +44,20 @@ bool VulkanTexture::Create(const VulkanTextureCreateInfo& createInfo)
     }
 
     const VkExtent2D extent{ createInfo.width, createInfo.height };
-    const uint32 mipLevels = createInfo.config.mipmaps ?
+
+    const uint32 requestedMipLevels = createInfo.config.mipmaps ?
         (uint32)std::floor(std::log2((float32)std::max(createInfo.width, createInfo.height))) + 1 : 1;
 
-    const VkImageUsageFlags imageUsage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    const VkFormat format = VulkanImageFormat::FromImageFormat(createInfo.format);
+    const bool canGenerateMips = requestedMipLevels <= 1 || VulkanImageFormat::SupportsLinearBlit(createInfo.device->GetPhysicalDevice(), format);
+    const uint32 mipLevels = canGenerateMips ? requestedMipLevels : 1;
+
+    VkImageUsageFlags imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+    if (mipLevels > 1)
+    {
+        imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    }
 
     VulkanImageCreateInfo imageInfo{};
     imageInfo.device = createInfo.device;

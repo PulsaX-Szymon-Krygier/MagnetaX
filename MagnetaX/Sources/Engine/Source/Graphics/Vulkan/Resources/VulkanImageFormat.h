@@ -13,4 +13,6 @@ public:
     static ImageFormat ToImageFormat(VkFormat format);
 
     static VkImageAspectFlags GetImageAspect(ImageFormat format);
+
+    static bool SupportsLinearBlit(VkPhysicalDevice physicalDevice, VkFormat format);
 };

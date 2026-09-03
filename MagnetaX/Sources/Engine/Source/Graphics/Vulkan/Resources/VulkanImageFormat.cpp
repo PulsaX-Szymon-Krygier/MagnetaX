@@ -66,4 +66,19 @@ VkImageAspectFlags VulkanImageFormat::GetImageAspect(ImageFormat format)
         return 0;
     }
 }
+
+bool VulkanImageFormat::SupportsLinearBlit(VkPhysicalDevice physicalDevice, VkFormat format)
+{
+    if (!physicalDevice || format == VK_FORMAT_UNDEFINED) return false;
+
+    VkFormatProperties2 formatProps{};
+    formatProps.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2;
+
+    vkGetPhysicalDeviceFormatProperties2(physicalDevice, format, &formatProps);
+
+    const VkFormatFeatureFlags requiredFeatures = VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT |
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+
+    return (formatProps.formatProperties.optimalTilingFeatures & requiredFeatures) == requiredFeatures;
+}
 #endif

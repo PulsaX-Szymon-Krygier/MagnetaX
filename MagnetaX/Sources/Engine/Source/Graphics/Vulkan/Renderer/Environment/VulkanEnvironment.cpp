@@ -194,7 +194,13 @@ bool VulkanEnvironment::SetSource(const VulkanEnvironmentSourceInfo& sourceInfo)
     if (faceSize == 0) return false;
 
     const VkDevice buffDevice = device->GetDevice();
-    const uint32 environmentMipLevels = CalculateMipLevels(faceSize);
+
+    const VkFormat environmentFormat = VulkanImageFormat::FromImageFormat(ImageFormat::RGBA16_FLOAT);
+    if (environmentFormat == VK_FORMAT_UNDEFINED) return false;
+
+    const uint32 fullMipLevels = CalculateMipLevels(faceSize);
+    const bool canGenerateMips = fullMipLevels <= 1 || VulkanImageFormat::SupportsLinearBlit(device->GetPhysicalDevice(), environmentFormat);
+    const uint32 environmentMipLevels = canGenerateMips ? fullMipLevels : 1;
 
     VulkanTexture sourceTexture;
 
@@ -240,12 +246,15 @@ bool VulkanEnvironment::SetSource(const VulkanEnvironmentSourceInfo& sourceInfo)
         return false;
     }
 
+    VkImageUsageFlags environmentUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+    if (environmentMipLevels > 1) environmentUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+
     VulkanImageCreateInfo environmentImageInfo{};
     environmentImageInfo.device = device;
     environmentImageInfo.extent = { faceSize, faceSize };
     environmentImageInfo.format = ImageFormat::RGBA16_FLOAT;
-    environmentImageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | 
-        VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    environmentImageInfo.usage = environmentUsage;
     environmentImageInfo.mipLevels = environmentMipLevels;
     environmentImageInfo.arrayLayers = CUBE_FACE_COUNT;
     environmentImageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
