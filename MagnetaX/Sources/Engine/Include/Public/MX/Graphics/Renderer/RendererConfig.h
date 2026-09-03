@@ -5,11 +5,11 @@
 #include <MX/Core/CoreMinimal.h>
 #include "PostFX/PostFXConfig.h"
 #include "Shadow/ShadowConfig.h"
-#include "TAAConfig.h"
+#include "AA/AAConfig.h"
 
 struct RendererConfig
 {
     PostFXConfig postFX{};
     ShadowConfig shadows{};
-    TAAConfig taa{};
+    AAConfig aa{};
 };

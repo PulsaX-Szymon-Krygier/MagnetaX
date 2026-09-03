@@ -4,7 +4,9 @@
 
 #include <MX/Core/CoreMinimal.h>
 
-struct PostFXConfig
+enum class AAMode : uint8
 {
-    uint16 dummy = 0;
+    OFF,
+    FXAA,
+    TAA
 };

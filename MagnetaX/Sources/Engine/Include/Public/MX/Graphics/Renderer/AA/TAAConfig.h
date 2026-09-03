@@ -6,5 +6,6 @@
 
 struct TAAConfig
 {
-    bool enabled = false;
+    float32 feedbackMin = 0.88f;
+    float32 feedbackMax = 0.97f;
 };

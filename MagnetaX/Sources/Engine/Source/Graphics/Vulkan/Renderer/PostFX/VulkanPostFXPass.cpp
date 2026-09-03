@@ -187,10 +187,10 @@ void VulkanPostFXPass::Record(const VulkanPostFXPassRenderInfo& renderInfo)
     vkCmdBindPipeline(renderInfo.cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.GetPipeline());
 
     PostFXPushConstants pushConstants{};
-    pushConstants.fxaaEnabled = renderInfo.config.enabled ? 1u : 0u;
-    pushConstants.contrastThreshold = renderInfo.config.contrastThreshold;
-    pushConstants.relativeThreshold = renderInfo.config.relativeThreshold;
-    pushConstants.subpixelBlending = renderInfo.config.subpixelBlending;
+    pushConstants.fxaaEnabled = renderInfo.fxaaEnabled ? 1u : 0u;
+    pushConstants.contrastThreshold = renderInfo.fxaaConfig.contrastThreshold;
+    pushConstants.relativeThreshold = renderInfo.fxaaConfig.relativeThreshold;
+    pushConstants.subpixelBlending = renderInfo.fxaaConfig.subpixelBlending;
 
     vkCmdPushConstants(renderInfo.cmdBuffer, pipeline.GetPipelineLayout(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PostFXPushConstants), &pushConstants);
 

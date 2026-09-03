@@ -16,7 +16,7 @@
 #include "Deferred/VulkanLightingPass.h"
 #include "PostFX/VulkanPostFXPass.h"
 #include "PostFX/VulkanToneMapPass.h"
-#include "PostFX/VulkanTAAPass.h"
+#include "Temporal/VulkanTAAPass.h"
 #include "Shadow/VulkanShadowDepthPass.h"
 #include "UI/VulkanUIPass.h"
 #include "Environment/VulkanEnvironmentRenderData.h"

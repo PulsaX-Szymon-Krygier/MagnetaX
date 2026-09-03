@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MPL-2.0
 #pragma once
 
-#include <MX/Graphics/Renderer/PostFX/FXAAConfig.h>
+#include <MX/Graphics/Renderer/AA/FXAAConfig.h>
 #include "../VulkanPass.h"
 #include "../VulkanPipeline.h"
 
@@ -16,7 +16,9 @@ struct VulkanPostFXPassRenderInfo : VulkanPassRenderInfo
 {
     VkImageView targetView = VK_NULL_HANDLE;
     VkExtent2D extent{};
-    FXAAConfig config{};
+
+    bool fxaaEnabled = false;
+    FXAAConfig fxaaConfig{};
 };
 
 class VulkanPostFXPass

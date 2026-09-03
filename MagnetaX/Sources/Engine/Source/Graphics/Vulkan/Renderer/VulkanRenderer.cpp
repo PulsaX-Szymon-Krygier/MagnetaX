@@ -159,7 +159,7 @@ bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
         return false;
     }
 
-    if (config.taa.enabled)
+    if (config.aa.mode == AAMode::TAA)
     {
         VulkanImageCreateInfo taaHistoryInfo{};
         taaHistoryInfo.device = device;
@@ -277,7 +277,7 @@ bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
 
     VulkanToneMapPassCreateInfo toneMapInfo{};
     toneMapInfo.device = device;
-    toneMapInfo.srcImage = config.taa.enabled ? &taaHistory[0] : &sceneColor;
+    toneMapInfo.srcImage = config.aa.mode == AAMode::TAA ? &taaHistory[0] : &sceneColor;
     toneMapInfo.outFormat = ldrColor.GetFormat();
 
     if (!toneMapPass.Create(toneMapInfo))
@@ -581,7 +581,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
 
         VkImageView toneMapSourceView = sceneColor.GetImageView();
 
-        if (config.taa.enabled)
+        if (config.aa.mode == AAMode::TAA)
         {
             const uint32 taaHistoryWriteIndex = 1u - taaHistoryReadIndex;
 
@@ -712,7 +712,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
         postFXInfo.cmdBuffer = cmdBuffer;
         postFXInfo.targetView = displayTarget.GetImageView();
         postFXInfo.extent = extent;
-        postFXInfo.config = config.postFX.fxaa;
+        postFXInfo.fxaaConfig = config.aa.fxaa;
 
         postFXPass.Record(postFXInfo);
     }
@@ -857,7 +857,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
 
 Vector2f VulkanRenderer::GetProjectionJitter(VkExtent2D extent) const
 {
-    if (!config.taa.enabled) return Vector2f(0.0f);
+    if (config.aa.mode != AAMode::TAA) return Vector2f(0.0f);
     if (debugView != GraphicsDebugView::FINAL) return Vector2f(0.0f);
     if (extent.width == 0 || extent.height == 0) return Vector2f(0.0f);
 
