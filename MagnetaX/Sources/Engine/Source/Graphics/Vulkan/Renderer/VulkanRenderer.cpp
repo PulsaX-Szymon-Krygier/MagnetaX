@@ -12,6 +12,8 @@
 #include "../VulkanDevice.h"
 #include "../VulkanInitializers.h"
 #include <array>
+#include <span>
+#include <cmath>
 
 namespace
 {
@@ -32,7 +34,7 @@ namespace
 
     Vector2f CalculateTAAJitter(uint64 frameIndex, VkExtent2D extent)
     {
-        const uint32 sampleIndex = (uint32)(frameIndex % 8) + 1;
+        const uint32 sampleIndex = (uint32)((frameIndex - 1) % 16) + 1;
 
         const float32 jitterX = Halton(sampleIndex, 2) - 0.5f;
         const float32 jitterY = Halton(sampleIndex, 3) - 0.5f;
@@ -58,6 +60,13 @@ bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
     if (swapchainFormat == VK_FORMAT_UNDEFINED || swapchain.GetImages().empty()) return false;
     if (displayColorFormat != ImageFormat::BGRA8_SRGB && displayColorFormat != ImageFormat::RGBA8_SRGB) return false;
     if (createInfo.config.shadows.directional.resolution == 0 || createInfo.config.shadows.spot.resolution == 0) return false;
+
+    if (createInfo.config.aa.mode == AAMode::TAA)
+    {
+        const TAAConfig& taa = createInfo.config.aa.taa;
+
+        if (!std::isfinite(taa.feedbackMin) || !std::isfinite(taa.feedbackMax) || taa.feedbackMin < 0.0f || taa.feedbackMax > 1.0f || taa.feedbackMin > taa.feedbackMax) return false;
+    }
 
     Destroy();
 
@@ -175,6 +184,17 @@ bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
                 Destroy();
                 return false;
             }
+        }
+
+        VulkanCamVelocityPassCreateInfo camVelocityInfo{};
+        camVelocityInfo.device = device;
+        camVelocityInfo.depthImage = &gBufferPass.GetGBuffer().GetDepthImage();
+        camVelocityInfo.outFormat = gBufferPass.GetGBuffer().GetVelocityImage().GetFormat();
+
+        if (!camVelocityPass.Create(camVelocityInfo))
+        {
+            Destroy();
+            return false;
         }
 
         VulkanTAAPassCreateInfo taaInfo{};
@@ -334,6 +354,7 @@ void VulkanRenderer::Destroy()
     toneMapPass.Destroy();
 
     taaPass.Destroy();
+    camVelocityPass.Destroy();
 
     for (VulkanImage& history : taaHistory)
     {
@@ -391,7 +412,6 @@ void VulkanRenderer::Destroy()
     prevFrameValid = false;
     taaHistoryValid = false;
     prevViewProj = Matrix4f::Identity();
-    prevJitter = Vector2f(0.0f);
     prevObjectModels.clear();
     framePrevModels.clear();
 
@@ -411,6 +431,8 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
     const UIRenderData& uiData = *frameInfo.uiData;
     const std::span<const VulkanDrawItem> drawItems = frameInfo.drawItems;
     const VulkanEnvironmentRenderData& env = frameInfo.environment;
+    const bool hasEnvironment = env.environmentView && env.environmentSampler && sceneData.viewData.valid;
+
 
     bool displayColorUsedByUI = false;
 
@@ -510,6 +532,35 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
 
     gBufferPass.Record(gBufferInfo);
 
+    if (config.aa.mode == AAMode::TAA && sceneData.viewData.valid)
+    {
+        const VulkanImage& velocityImage = gBufferPass.GetGBuffer().GetVelocityImage();
+
+        const VkImageMemoryBarrier2 velocityWriteBarrier = VulkanInitializers::ImageMemoryBarrier(velocityImage.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+
+        VkDependencyInfo velocityDependencyInfo{};
+        velocityDependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        velocityDependencyInfo.imageMemoryBarrierCount = 1;
+        velocityDependencyInfo.pImageMemoryBarriers = &velocityWriteBarrier;
+
+        vkCmdPipelineBarrier2(cmdBuffer, &velocityDependencyInfo);
+
+        VulkanCamVelocityPassRenderInfo camVelocityInfo{};
+        camVelocityInfo.cmdBuffer = cmdBuffer;
+        camVelocityInfo.targetView = velocityImage.GetImageView();
+        camVelocityInfo.extent = extent;
+        camVelocityInfo.invViewProj = sceneData.viewData.invViewProj;
+        camVelocityInfo.prevViewProj = prevFrameValid ? prevViewProj : sceneData.viewData.viewProj;
+
+        camVelocityPass.Record(camVelocityInfo);
+
+        const VkImageMemoryBarrier2 velocityReadBarrier = VulkanInitializers::ImageMemoryBarrier(velocityImage.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+
+        velocityDependencyInfo.pImageMemoryBarriers = &velocityReadBarrier;
+
+        vkCmdPipelineBarrier2(cmdBuffer, &velocityDependencyInfo);
+    }
+
     VkImageLayout& swapchainLayout = swapchainImageLayouts[imageIndex];
 
     const VulkanImage& displayTarget = displayColorUsedByUI ? displayColor : swapchainImage;
@@ -572,8 +623,6 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
         lightingInfo.brdfLUTSampler = env.brdfLUTSampler;
 
         lightingPass.Record(lightingInfo);
-
-        const bool hasEnvironment = env.environmentView && env.environmentSampler && sceneData.viewData.valid;
 
         if (hasEnvironment)
         {
@@ -662,7 +711,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
             taaInfo.feedbackMin = config.aa.taa.feedbackMin;
             taaInfo.feedbackMax = config.aa.taa.feedbackMax;
             taaInfo.historyValid = taaHistoryValid;
-            taaInfo.jitter = sceneData.viewData.jitter;
+            taaInfo.jitterUV = sceneData.viewData.jitter * 0.5f;
 
             taaPass.Record(taaInfo);
 
@@ -784,7 +833,6 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
     if (config.aa.mode == AAMode::TAA && sceneData.viewData.valid)
     {
         prevViewProj = sceneData.viewData.viewProj;
-        prevJitter = sceneData.viewData.jitter;
 
         prevObjectModels.clear();
         prevObjectModels.reserve(drawItems.size());
@@ -915,6 +963,7 @@ Vector2f VulkanRenderer::GetProjectionJitter(VkExtent2D extent) const
     if (config.aa.mode != AAMode::TAA) return Vector2f(0.0f);
     if (debugView != GraphicsDebugView::FINAL) return Vector2f(0.0f);
     if (extent.width == 0 || extent.height == 0) return Vector2f(0.0f);
+    if (!taaHistoryValid || taaFrameIndex == 0) return Vector2f(0.0f);
 
     return CalculateTAAJitter(taaFrameIndex, extent);
 }

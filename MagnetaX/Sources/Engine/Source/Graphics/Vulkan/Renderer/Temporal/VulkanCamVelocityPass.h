@@ -3,41 +3,33 @@
 #pragma once
 
 #include <MX/Core/Math/Matrix.h>
-#include <MX/Core/Math/Vector.h>
 #include "../VulkanPass.h"
 #include "../VulkanPipeline.h"
 
-struct VulkanTAAPassCreateInfo : VulkanPassCreateInfo
+struct VulkanCamVelocityPassCreateInfo : VulkanPassCreateInfo
 {
-    VulkanImage* currentColor = nullptr;
-    VkFormat outFormat = VK_FORMAT_UNDEFINED;
-
-    const VulkanImage* velocityImage = nullptr;
     const VulkanImage* depthImage = nullptr;
+    VkFormat outFormat = VK_FORMAT_UNDEFINED;
 };
 
-struct VulkanTAAPassRenderInfo : VulkanPassRenderInfo
+struct VulkanCamVelocityPassRenderInfo : VulkanPassRenderInfo
 {
-    VkImageView historyView = VK_NULL_HANDLE;
     VkImageView targetView = VK_NULL_HANDLE;
     VkExtent2D extent{};
 
-    Vector2f jitterUV{};
-    float32 feedbackMin = 0.88f;
-    float32 feedbackMax = 0.97f;
-
-    bool historyValid = false;
+    Matrix4f invViewProj = Matrix4f::Identity();
+    Matrix4f prevViewProj = Matrix4f::Identity();
 };
 
-class VulkanTAAPass
+class VulkanCamVelocityPass
 {
 public:
-    VulkanTAAPass() = default;
+    VulkanCamVelocityPass() = default;
 
-    bool Create(const VulkanTAAPassCreateInfo& createInfo);
+    bool Create(const VulkanCamVelocityPassCreateInfo& createInfo);
     void Destroy();
 
-    void Record(const VulkanTAAPassRenderInfo& renderInfo);
+    void Record(const VulkanCamVelocityPassRenderInfo& renderInfo);
 
 private:
     VkDevice device = VK_NULL_HANDLE;

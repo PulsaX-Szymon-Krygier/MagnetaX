@@ -11,7 +11,7 @@ layout(set = 0, binding = 3) uniform sampler2D depthTexture;
 
 layout(push_constant) uniform PushConstants
 {
-    vec2 jitter;
+    vec2 jitterUV;
     float feedbackMin;
     float feedbackMax;
     uint historyValid;
@@ -96,7 +96,7 @@ vec2 GetClosestVelocity(vec2 uv, out float closestDepth)
 
 void main()
 {
-    vec2 currentUV = fragUV + pc.jitter * 0.5;
+    vec2 currentUV = fragUV + pc.jitterUV;
     vec4 current = texture(currentColor, currentUV);
 
     if (pc.historyValid == 0)
@@ -108,13 +108,7 @@ void main()
     float closestDepth = 1.0;
     vec2 velocity = GetClosestVelocity(fragUV, closestDepth);
 
-    if (closestDepth >= 0.999999)
-    {
-        outColor = current;
-        return;
-    }
-
-    vec2 previousUV = fragUV - velocity * 0.5;
+    vec2 previousUV = fragUV - velocity;
 
     if (any(lessThan(previousUV, vec2(0.0))) || any(greaterThan(previousUV, vec2(1.0))))
     {

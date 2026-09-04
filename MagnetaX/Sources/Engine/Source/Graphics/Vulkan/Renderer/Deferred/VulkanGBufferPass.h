@@ -21,7 +21,7 @@ struct VulkanGBufferPassCreateInfo : VulkanPassCreateInfo
 struct VulkanGBufferPassRenderInfo : VulkanPassRenderInfo
 {
     std::span<const VulkanDrawItem> drawItems;
-    std::span<Matrix4f> prevModels;
+    std::span<const Matrix4f> prevModels;
 
     const RenderViewData* viewData = nullptr;
     Matrix4f prevViewProj = Matrix4f::Identity();

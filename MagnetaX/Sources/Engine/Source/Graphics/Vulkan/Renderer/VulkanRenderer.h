@@ -17,6 +17,7 @@
 #include "PostFX/VulkanPostFXPass.h"
 #include "PostFX/VulkanToneMapPass.h"
 #include "Temporal/VulkanTAAPass.h"
+#include "Temporal/VulkanCamVelocityPass.h"
 #include "Shadow/VulkanShadowDepthPass.h"
 #include "UI/VulkanUIPass.h"
 #include "Environment/VulkanEnvironmentRenderData.h"
@@ -82,6 +83,9 @@ struct VulkanRendererFrameInfo
 //                     |
 //                     v
 //           GBuffer (gBufferPass)
+//                     |
+//              Cam velocity fill
+//              (camVelocityPass)
 //                     |
 //          -----------+-----------
 //          |                     |
@@ -174,16 +178,16 @@ private:
     VulkanImage sceneColor;
     VkImageLayout sceneColorLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-    // TAA
+    // Temporal AA (TAA)
     std::array<VulkanImage, 2> taaHistory;
     std::array<VkImageLayout, 2> taaHistoryLayouts{ VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED };
+    VulkanCamVelocityPass camVelocityPass;
     VulkanTAAPass taaPass;
     uint64 taaFrameIndex = 0;
     uint32 taaHistoryReadIndex = 0;
     bool prevFrameValid = false;
     bool taaHistoryValid = false;
     Matrix4f prevViewProj = Matrix4f::Identity();
-    Vector2f prevJitter{ 0.0f };
     std::unordered_map<uint32, Matrix4f> prevObjectModels;
     std::vector<Matrix4f> framePrevModels;
 

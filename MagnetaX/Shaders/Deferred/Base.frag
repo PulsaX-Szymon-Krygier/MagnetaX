@@ -53,5 +53,5 @@ void main()
     vec2 currentStableNDC = fragCurrentStableClip.xy / fragCurrentStableClip.w;
     vec2 prevStableNDC = fragPrevStableClip.xy / fragPrevStableClip.w;
 
-    outVelocity = currentStableNDC - prevStableNDC;
+    outVelocity = 0.5 * (currentStableNDC - prevStableNDC);
 }

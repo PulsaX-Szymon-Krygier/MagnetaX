@@ -13,7 +13,7 @@ namespace
 {
     struct TAAPushConstants
     {
-        Vector2f jitter;
+        Vector2f jitterUV;
         float32 feedbackMin;
         float32 feedbackMax;
         uint32 historyValid;
@@ -257,7 +257,7 @@ void VulkanTAAPass::Record(const VulkanTAAPassRenderInfo& renderInfo)
     pushConstants.feedbackMin = renderInfo.feedbackMin;
     pushConstants.feedbackMax = renderInfo.feedbackMax;
     pushConstants.historyValid = renderInfo.historyValid ? 1u : 0u;
-    pushConstants.jitter = renderInfo.jitter;
+    pushConstants.jitterUV = renderInfo.jitterUV;
 
     vkCmdPushConstants(renderInfo.cmdBuffer, pipeline.GetPipelineLayout(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(TAAPushConstants), &pushConstants);
     vkCmdBindDescriptorSets(renderInfo.cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.GetPipelineLayout(), 0, 1, &descSet, 0, nullptr);

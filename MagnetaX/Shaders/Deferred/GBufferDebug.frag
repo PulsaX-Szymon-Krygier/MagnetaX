@@ -42,7 +42,7 @@ void main()
             return;
         }
 
-        vec2 velocity = clamp(texture(gVelocity, fragUV).xy * 32.0, -1.0, 1.0);
+        vec2 velocity = clamp(texture(gVelocity, fragUV).xy * 64.0, -1.0, 1.0);
 
         vec3 color = vec3(0.0);
         color.r = max(velocity.x, 0.0) + max(-velocity.y, 0.0);
