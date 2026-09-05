@@ -16,11 +16,7 @@ layout(push_constant) uniform PushConstants
     float subpixelBlending;
 } pc;
 
-// ----------------------- FXAA 3.11 -----------------------
-// Credits for Timothy Lottes for FXAA 3.11 (thank you!)
-// https://developer.download.nvidia.com/assets/gamedev/files/sdk/11/FXAA_WhitePaper.pdf
-// https://www.iryoku.com/aacourse/downloads/09-FXAA-3.11-in-15-Slides.pdf
-// https://github.com/GameTechDev/CMAA2/blob/master/Projects/CMAA2/FXAA/Fxaa3_11.h
+// FXAA 3.11 shader code
 struct LuminanceData
 {
     float m;
@@ -278,7 +274,7 @@ vec3 ApplyFXAA(vec2 uv)
 
     return Sample(uv).rgb;
 }
-// ----------------------- END OF FXAA 3.11 -----------------------
+// End of FXAA
 
 void main()
 {

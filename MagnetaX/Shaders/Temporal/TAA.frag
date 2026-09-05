@@ -1,12 +1,5 @@
 // Copyright (c) 2026 PulsaX Szymon Krygier
 // SPDX-License-Identifier: MPL-2.0
-
-// Temporal AA implementation based on
-// techniques and reference implementations by:
-// Playdead - Temporal Reprojection Anti-Aliasing for INSIDE
-// Intel GameTechDev - Temporal Anti-Aliasing
-// Marco Salvi - An Excursion in Temporal Supersampling
-// Brian Karis - High Quality Temporal Supersampling
 #version 450
 
 layout(location = 0) in vec2 fragUV;
