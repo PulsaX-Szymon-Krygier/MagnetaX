@@ -19,7 +19,7 @@ layout(set = 0, binding = 1) uniform MaterialData
 layout(location = 0) out vec4 outAlbedo;
 layout(location = 1) out vec4 outNormal;
 layout(location = 2) out vec4 outMaterial;
-layout(location = 3) out vec2 outVelocity;
+layout(location = 3) out vec4 outVelocity;
 
 void main()
 {
@@ -50,8 +50,11 @@ void main()
     outNormal = vec4(normal, 1.0);
     outMaterial = vec4(roughness, metallic, ambientOcclusion, 0.0);
 
-    vec2 currentStableNDC = fragCurrentStableClip.xy / fragCurrentStableClip.w;
-    vec2 prevStableNDC = fragPrevStableClip.xy / fragPrevStableClip.w;
+    vec3 currentStableNDC = fragCurrentStableClip.xyz / fragCurrentStableClip.w;
+    vec3 prevStableNDC = fragPrevStableClip.xyz / fragPrevStableClip.w;
 
-    outVelocity = 0.5 * (currentStableNDC - prevStableNDC);
+    vec2 velocityUV = 0.5 * (currentStableNDC.xy - prevStableNDC.xy);
+    float depthDelta = prevStableNDC.z - currentStableNDC.z;
+
+    outVelocity = vec4(velocityUV, depthDelta, 0.0);
 }

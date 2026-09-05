@@ -202,6 +202,8 @@ void VulkanGraphicsSystem::Destroy()
     surface.Destroy();
     instance.Destroy();
 
+    prevScene = nullptr;
+
     surfaceHost = nullptr;
     debugView = GraphicsDebugView::FINAL;
 }
@@ -301,14 +303,19 @@ void VulkanGraphicsSystem::RenderScene(Scene* scene, AssetManager* assetManager,
             drawItems.push_back({ mesh, material, object.mvp, object.model, object.id });
         }
     }
+    
+    const bool sceneChanged = scene != prevScene;
 
     VulkanRendererFrameInfo frameInfo{};
     frameInfo.drawItems = drawItems;
     frameInfo.sceneData = &sceneData;
     frameInfo.uiData = &uiData;
     frameInfo.environment = environment.GetRenderData();
+    frameInfo.resetTemporalHistory = sceneChanged;
 
     const VulkanFrameResult frameResult = renderer.DrawFrame(frameInfo);
+
+    prevScene = scene;
 
     if (frameResult == VulkanFrameResult::RECREATE)
     {

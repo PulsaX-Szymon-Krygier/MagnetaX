@@ -19,6 +19,7 @@ struct RenderViewData
 
     Vector2f jitter{ 0.0f };
 
+    uint32 cameraId = 0;
     Vector3f position{ 0.0f };
     float32 nearPlane = 0.1f;
     float32 farPlane = 1000.0f;

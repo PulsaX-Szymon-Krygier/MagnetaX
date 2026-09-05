@@ -20,9 +20,11 @@ struct VulkanTAAPassRenderInfo : VulkanPassRenderInfo
 {
     VkImageView historyView = VK_NULL_HANDLE;
     VkImageView targetView = VK_NULL_HANDLE;
+    VkImageView previousDepthView = VK_NULL_HANDLE;
     VkExtent2D extent{};
 
     Vector2f jitterUV{};
+    Vector2f prevJitterUV{};
     float32 feedbackMin = 0.88f;
     float32 feedbackMax = 0.97f;
 

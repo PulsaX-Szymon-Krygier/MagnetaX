@@ -12,7 +12,7 @@ layout(push_constant) uniform PushConstants
     mat4 prevViewProj;
 } pc;
 
-layout(location = 0) out vec2 outVelocity;
+layout(location = 0) out vec4 outVelocity;
 
 void main()
 {
@@ -37,11 +37,14 @@ void main()
 
     if (prevClip.w <= 0.0)
     {
-        outVelocity = vec2(0.0);
+        outVelocity = vec4(0.0);
         return;
     }
 
-    vec2 prevNDC = prevClip.xy / prevClip.w;
+    vec3 prevNDC = prevClip.xyz / prevClip.w;
 
-    outVelocity = 0.5 * (currentNDC - prevNDC);
+    vec2 velocityUV = 0.5 * (currentNDC - prevNDC.xy);
+    float depthDelta = prevNDC.z - depth;
+
+    outVelocity = vec4(velocityUV, depthDelta, 0.0);
 }

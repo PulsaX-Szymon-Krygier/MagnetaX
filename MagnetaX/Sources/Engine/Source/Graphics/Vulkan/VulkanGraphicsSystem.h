@@ -65,6 +65,8 @@ private:
     VulkanEnvironment environment;
     uint64 environmentMapAssetID = 0;
 
+    Scene* prevScene = nullptr;
+
     void UpdateEnvironment(AssetHandle<TextureAsset> environmentMap, AssetManager* assetManager);
 
     VulkanTexture* GetOrCreateTexture(uint64 assetID, TextureAsset* textureAsset);

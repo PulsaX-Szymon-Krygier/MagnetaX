@@ -12,7 +12,8 @@ bool VulkanGBuffer::Create(const VulkanGBufferCreateInfo& createInfo)
     extent = createInfo.extent;
 
     const VkImageUsageFlags colorUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    const VkImageUsageFlags depthUsage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    const VkImageUsageFlags depthUsage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+        VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 
     VulkanImageCreateInfo imageInfo{};
     imageInfo.device = createInfo.device;
@@ -42,7 +43,7 @@ bool VulkanGBuffer::Create(const VulkanGBufferCreateInfo& createInfo)
 
     if (createInfo.createVelocity)
     {
-        imageInfo.format = ImageFormat::RG16_FLOAT;
+        imageInfo.format = ImageFormat::RGBA16_FLOAT;
 
         if (!velocityImage.Create(imageInfo))
         {

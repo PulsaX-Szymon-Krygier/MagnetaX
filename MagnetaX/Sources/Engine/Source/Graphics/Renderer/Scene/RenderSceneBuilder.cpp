@@ -82,6 +82,7 @@ RenderSceneData BuildRenderSceneData(Scene* scene, const Size2i& renderSize, con
     sceneData.viewData.farPlane = cameraComponent->farPlane;
     sceneData.viewData.exposureEV = cameraComponent->exposureEV;
     sceneData.viewData.valid = true;
+    sceneData.viewData.cameraId = cameraEntity.GetID();
 
     scene->ForEach<MeshComponent>(
         [&](Entity entity, MeshComponent& meshComponent)

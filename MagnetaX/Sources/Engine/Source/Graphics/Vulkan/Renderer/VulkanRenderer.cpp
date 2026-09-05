@@ -41,6 +41,11 @@ namespace
 
         return Vector2f(2.0f * jitterX / (float32)extent.width, 2.0f * jitterY / (float32)extent.height);
     }
+
+    bool HasProjectionChanged(const Matrix4f& a, const Matrix4f& b)
+    {
+        return a.m00 != b.m00 || a.m01 != b.m01 || a.m02 != b.m02 || a.m03 != b.m03 || a.m10 != b.m10 || a.m11 != b.m11 || a.m12 != b.m12 || a.m13 != b.m13 || a.m20 != b.m20 || a.m21 != b.m21 || a.m22 != b.m22 || a.m23 != b.m23 || a.m30 != b.m30 || a.m31 != b.m31 || a.m32 != b.m32 || a.m33 != b.m33;
+    }
 }
 
 bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
@@ -180,6 +185,21 @@ bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
         for (VulkanImage& history : taaHistory)
         {
             if (!history.Create(taaHistoryInfo))
+            {
+                Destroy();
+                return false;
+            }
+        }
+
+        VulkanImageCreateInfo taaDepthHistoryInfo{};
+        taaDepthHistoryInfo.device = device;
+        taaDepthHistoryInfo.extent = extent;
+        taaDepthHistoryInfo.format = ImageFormat::D32_FLOAT;
+        taaDepthHistoryInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+        for (VulkanImage& depthHistory : taaDepthHistory)
+        {
+            if (!depthHistory.Create(taaDepthHistoryInfo))
             {
                 Destroy();
                 return false;
@@ -361,6 +381,11 @@ void VulkanRenderer::Destroy()
         history.Destroy();
     }
 
+    for (VulkanImage& depthHistory : taaDepthHistory)
+    {
+        depthHistory.Destroy();
+    }
+
     gBufferDebugPass.Destroy();
 
     skyPass.Destroy();
@@ -407,13 +432,9 @@ void VulkanRenderer::Destroy()
     swapchainImageLayouts.clear();
 
     taaHistoryLayouts = { VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED };
-    taaHistoryReadIndex = 0;
-    taaFrameIndex = 0;
-    prevFrameValid = false;
-    taaHistoryValid = false;
-    prevViewProj = Matrix4f::Identity();
-    prevObjectModels.clear();
-    framePrevModels.clear();
+    taaDepthHistoryLayouts = { VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED };
+
+    ResetTemporalHistory();
 
     config = {};
     presentContext = nullptr;
@@ -433,6 +454,15 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
     const VulkanEnvironmentRenderData& env = frameInfo.environment;
     const bool hasEnvironment = env.environmentView && env.environmentSampler && sceneData.viewData.valid;
 
+    if (frameInfo.resetTemporalHistory) ResetTemporalHistory();
+
+    if (config.aa.mode == AAMode::TAA && debugView == GraphicsDebugView::FINAL && sceneData.viewData.valid && prevFrameValid)
+    {
+        const bool cameraChanged = sceneData.viewData.cameraId != prevCameraId;
+        const bool projectionChanged = HasProjectionChanged(sceneData.viewData.proj, prevProj);
+
+        if (cameraChanged || projectionChanged) ResetTemporalHistory();
+    }
 
     bool displayColorUsedByUI = false;
 
@@ -661,15 +691,66 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
 
         VkImageView toneMapSourceView = sceneColor.GetImageView();
 
-        if (config.aa.mode == AAMode::TAA)
+        if (config.aa.mode == AAMode::TAA && sceneData.viewData.valid)
         {
             const uint32 taaHistoryWriteIndex = 1u - taaHistoryReadIndex;
 
             VulkanImage& taaHistoryRead = taaHistory[taaHistoryReadIndex];
             VulkanImage& taaHistoryWrite = taaHistory[taaHistoryWriteIndex];
+            VulkanImage& taaDepthHistoryRead = taaDepthHistory[taaHistoryReadIndex];
 
             VkImageLayout& taaHistoryReadLayout = taaHistoryLayouts[taaHistoryReadIndex];
             VkImageLayout& taaHistoryWriteLayout = taaHistoryLayouts[taaHistoryWriteIndex];
+
+            const VulkanImage& currentDepth = gBufferPass.GetGBuffer().GetDepthImage();
+            VulkanImage& taaDepthHistoryWrite = taaDepthHistory[taaHistoryWriteIndex];
+            VkImageLayout& taaDepthHistoryWriteLayout = taaDepthHistoryLayouts[taaHistoryWriteIndex];
+
+            VkPipelineStageFlags2 taaDepthHistoryWriteSrcStage = VK_PIPELINE_STAGE_2_NONE;
+            VkAccessFlags2 taaDepthHistoryWriteSrcAccess = VK_ACCESS_2_NONE;
+
+            if (taaDepthHistoryWriteLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+            {
+                taaDepthHistoryWriteSrcStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+                taaDepthHistoryWriteSrcAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+            }
+
+            const VkImageMemoryBarrier2 depthCopyBarriers[2] =
+            {
+                VulkanInitializers::ImageMemoryBarrier(currentDepth.GetImage(), VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT),
+                VulkanInitializers::ImageMemoryBarrier(taaDepthHistoryWrite.GetImage(), VK_IMAGE_ASPECT_DEPTH_BIT, taaDepthHistoryWriteLayout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, taaDepthHistoryWriteSrcStage, taaDepthHistoryWriteSrcAccess, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT)
+            };
+
+            dependencyInfo.imageMemoryBarrierCount = 2;
+            dependencyInfo.pImageMemoryBarriers = depthCopyBarriers;
+
+            vkCmdPipelineBarrier2(cmdBuffer, &dependencyInfo);
+
+            VkImageCopy depthCopy{};
+            depthCopy.srcSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+            depthCopy.srcSubresource.mipLevel = 0;
+            depthCopy.srcSubresource.baseArrayLayer = 0;
+            depthCopy.srcSubresource.layerCount = 1;
+            depthCopy.dstSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+            depthCopy.dstSubresource.mipLevel = 0;
+            depthCopy.dstSubresource.baseArrayLayer = 0;
+            depthCopy.dstSubresource.layerCount = 1;
+            depthCopy.extent = { extent.width, extent.height, 1 };
+
+            vkCmdCopyImage(cmdBuffer, currentDepth.GetImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, taaDepthHistoryWrite.GetImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &depthCopy);
+                        
+            const VkImageMemoryBarrier2 depthReadBarriers[2] =
+            {
+                VulkanInitializers::ImageMemoryBarrier(currentDepth.GetImage(), VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT),
+                VulkanInitializers::ImageMemoryBarrier(taaDepthHistoryWrite.GetImage(), VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT)
+            };
+
+            dependencyInfo.imageMemoryBarrierCount = 2;
+            dependencyInfo.pImageMemoryBarriers = depthReadBarriers;
+
+            vkCmdPipelineBarrier2(cmdBuffer, &dependencyInfo);
+
+            taaDepthHistoryWriteLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
             if (taaHistoryReadLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
             {
@@ -712,6 +793,8 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
             taaInfo.feedbackMax = config.aa.taa.feedbackMax;
             taaInfo.historyValid = taaHistoryValid;
             taaInfo.jitterUV = sceneData.viewData.jitter * 0.5f;
+            taaInfo.previousDepthView = taaHistoryValid ? taaDepthHistoryRead.GetImageView() : taaDepthHistoryWrite.GetImageView();
+            taaInfo.prevJitterUV = prevJitterUV;
 
             taaPass.Record(taaInfo);
 
@@ -732,11 +815,11 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
             taaHistoryReadIndex = taaHistoryWriteIndex;
             taaFrameIndex++;
             taaHistoryValid = true;
+            prevJitterUV = taaInfo.jitterUV;
         }
         else
         {
-            taaHistoryValid = false;
-            prevObjectModels.clear();
+            ResetTemporalHistory();
         }
 
         VkPipelineStageFlags2 ldrColorSrcStage = VK_PIPELINE_STAGE_2_NONE;
@@ -791,7 +874,10 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
     }
     else
     {
+        //ResetTemporalHistory();
         taaHistoryValid = false;
+        taaFrameIndex = 0;
+        prevJitterUV = {};
 
         GBufferDebugView gBufferView = GBufferDebugView::ALBEDO;
 
@@ -830,9 +916,12 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
         gBufferDebugPass.Record(gBufferDebugInfo);
     }
 
+    //if (config.aa.mode == AAMode::TAA && debugView == GraphicsDebugView::FINAL && sceneData.viewData.valid)
     if (config.aa.mode == AAMode::TAA && sceneData.viewData.valid)
     {
         prevViewProj = sceneData.viewData.viewProj;
+        prevProj = sceneData.viewData.proj;
+        prevCameraId = sceneData.viewData.cameraId;
 
         prevObjectModels.clear();
         prevObjectModels.reserve(drawItems.size());
@@ -966,5 +1055,19 @@ Vector2f VulkanRenderer::GetProjectionJitter(VkExtent2D extent) const
     if (!taaHistoryValid || taaFrameIndex == 0) return Vector2f(0.0f);
 
     return CalculateTAAJitter(taaFrameIndex, extent);
+}
+
+void VulkanRenderer::ResetTemporalHistory()
+{
+    taaHistoryReadIndex = 0;
+    taaFrameIndex = 0;
+    prevFrameValid = false;
+    taaHistoryValid = false;
+    prevViewProj = Matrix4f::Identity();
+    prevJitterUV = {};
+    prevObjectModels.clear();
+    framePrevModels.clear();
+    prevProj = Matrix4f::Identity();
+    prevCameraId = 0;
 }
 #endif

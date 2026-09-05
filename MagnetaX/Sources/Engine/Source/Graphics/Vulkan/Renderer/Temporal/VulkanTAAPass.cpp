@@ -14,6 +14,7 @@ namespace
     struct TAAPushConstants
     {
         Vector2f jitterUV;
+        Vector2f prevJitterUV;
         float32 feedbackMin;
         float32 feedbackMax;
         uint32 historyValid;
@@ -34,7 +35,7 @@ bool VulkanTAAPass::Create(const VulkanTAAPassCreateInfo& createInfo)
 
     device = buffDevice;
 
-    VkDescriptorSetLayoutBinding bindings[4]{};
+    VkDescriptorSetLayoutBinding bindings[5]{};
 
     bindings[0].binding = 0;
     bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -56,7 +57,12 @@ bool VulkanTAAPass::Create(const VulkanTAAPassCreateInfo& createInfo)
     bindings[3].descriptorCount = 1;
     bindings[3].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    const VkDescriptorSetLayoutCreateInfo layoutInfo = VulkanInitializers::DescriptorSetLayoutCreateInfo(4, bindings);
+    bindings[4].binding = 4;
+    bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[4].descriptorCount = 1;
+    bindings[4].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    const VkDescriptorSetLayoutCreateInfo layoutInfo = VulkanInitializers::DescriptorSetLayoutCreateInfo(5, bindings);
 
     if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descSetLayout) != VK_SUCCESS)
     {
@@ -84,7 +90,7 @@ bool VulkanTAAPass::Create(const VulkanTAAPassCreateInfo& createInfo)
 
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = 4;
+    poolSize.descriptorCount = 5;
 
     const VkDescriptorPoolCreateInfo poolInfo = VulkanInitializers::DescriptorPoolCreateInfo(1, 1, &poolSize);
 
@@ -201,21 +207,35 @@ void VulkanTAAPass::Record(const VulkanTAAPassRenderInfo& renderInfo)
 {
     if (!renderInfo.cmdBuffer || !renderInfo.historyView || !renderInfo.targetView) return;
     if (renderInfo.extent.width == 0 || renderInfo.extent.height == 0) return;
+    if (!renderInfo.previousDepthView) return;
 
     VkDescriptorImageInfo historyImageInfo{};
     historyImageInfo.sampler = sampler;
     historyImageInfo.imageView = renderInfo.historyView;
     historyImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    VkWriteDescriptorSet historyWrite{};
-    historyWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    historyWrite.dstSet = descSet;
-    historyWrite.dstBinding = 1;
-    historyWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    historyWrite.descriptorCount = 1;
-    historyWrite.pImageInfo = &historyImageInfo;
+    VkDescriptorImageInfo previousDepthImageInfo{};
+    previousDepthImageInfo.sampler = sampler;
+    previousDepthImageInfo.imageView = renderInfo.previousDepthView;
+    previousDepthImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    vkUpdateDescriptorSets(device, 1, &historyWrite, 0, nullptr);
+    VkWriteDescriptorSet dynamicWrites[2]{};
+
+    dynamicWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    dynamicWrites[0].dstSet = descSet;
+    dynamicWrites[0].dstBinding = 1;
+    dynamicWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    dynamicWrites[0].descriptorCount = 1;
+    dynamicWrites[0].pImageInfo = &historyImageInfo;
+
+    dynamicWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    dynamicWrites[1].dstSet = descSet;
+    dynamicWrites[1].dstBinding = 4;
+    dynamicWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    dynamicWrites[1].descriptorCount = 1;
+    dynamicWrites[1].pImageInfo = &previousDepthImageInfo;
+
+    vkUpdateDescriptorSets(device, 2, dynamicWrites, 0, nullptr);
 
     VkRenderingAttachmentInfo colorAttachment{};
     colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -258,6 +278,7 @@ void VulkanTAAPass::Record(const VulkanTAAPassRenderInfo& renderInfo)
     pushConstants.feedbackMax = renderInfo.feedbackMax;
     pushConstants.historyValid = renderInfo.historyValid ? 1u : 0u;
     pushConstants.jitterUV = renderInfo.jitterUV;
+    pushConstants.prevJitterUV = renderInfo.prevJitterUV;
 
     vkCmdPushConstants(renderInfo.cmdBuffer, pipeline.GetPipelineLayout(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(TAAPushConstants), &pushConstants);
     vkCmdBindDescriptorSets(renderInfo.cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.GetPipelineLayout(), 0, 1, &descSet, 0, nullptr);

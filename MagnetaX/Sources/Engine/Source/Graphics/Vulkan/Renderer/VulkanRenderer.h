@@ -59,6 +59,8 @@ struct VulkanRendererFrameInfo
     const UIRenderData* uiData = nullptr;
 
     VulkanEnvironmentRenderData environment{};
+
+    bool resetTemporalHistory = false;
 };
 
 // Since MagnetaX is under active dev and doesn't have
@@ -181,6 +183,8 @@ private:
     // Temporal AA (TAA)
     std::array<VulkanImage, 2> taaHistory;
     std::array<VkImageLayout, 2> taaHistoryLayouts{ VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED };
+    std::array<VulkanImage, 2> taaDepthHistory;
+    std::array<VkImageLayout, 2> taaDepthHistoryLayouts{ VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED };
     VulkanCamVelocityPass camVelocityPass;
     VulkanTAAPass taaPass;
     uint64 taaFrameIndex = 0;
@@ -188,6 +192,9 @@ private:
     bool prevFrameValid = false;
     bool taaHistoryValid = false;
     Matrix4f prevViewProj = Matrix4f::Identity();
+    Vector2f prevJitterUV{};
+    Matrix4f prevProj = Matrix4f::Identity();
+    uint32 prevCameraId = 0;
     std::unordered_map<uint32, Matrix4f> prevObjectModels;
     std::vector<Matrix4f> framePrevModels;
 
@@ -219,4 +226,6 @@ private:
     std::vector<VkImageLayout> swapchainImageLayouts;
 
     GraphicsDebugView debugView = GraphicsDebugView::FINAL;
+
+    void ResetTemporalHistory();
 };

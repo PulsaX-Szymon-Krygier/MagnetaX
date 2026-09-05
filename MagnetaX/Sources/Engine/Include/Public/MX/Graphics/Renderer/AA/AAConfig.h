@@ -8,7 +8,7 @@
 
 struct AAConfig
 {
-    AAMode mode = AAMode::FXAA;
+    AAMode mode = AAMode::TAA;
 
     FXAAConfig fxaa{};
     TAAConfig taa{};
