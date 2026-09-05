@@ -248,6 +248,8 @@ void VulkanGraphicsSystem::RenderScene(Scene* scene, AssetManager* assetManager,
     const Vector2f projectionJitter = renderer.GetProjectionJitter(extent);
     const RenderSceneData sceneData = BuildRenderSceneData(scene, renderSize, projectionJitter);
 
+    bool sceneChanged = scene != prevScene;
+
     UpdateEnvironment(sceneData.environmentMap, assetManager);
 
     std::vector<VulkanDrawItem> drawItems;
@@ -303,8 +305,6 @@ void VulkanGraphicsSystem::RenderScene(Scene* scene, AssetManager* assetManager,
             drawItems.push_back({ mesh, material, object.mvp, object.model, object.id });
         }
     }
-    
-    const bool sceneChanged = scene != prevScene;
 
     VulkanRendererFrameInfo frameInfo{};
     frameInfo.drawItems = drawItems;

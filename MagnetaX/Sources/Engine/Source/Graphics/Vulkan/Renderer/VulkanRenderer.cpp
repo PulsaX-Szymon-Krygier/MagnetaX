@@ -1047,9 +1047,10 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
     return suboptimal ? VulkanFrameResult::RECREATE : VulkanFrameResult::SUCCESS;
 }
 
-Vector2f VulkanRenderer::GetProjectionJitter(VkExtent2D extent) const
+Vector2f VulkanRenderer::GetProjectionJitter(VkExtent2D extent, bool temporalReset) const
 {
     if (config.aa.mode != AAMode::TAA) return Vector2f(0.0f);
+    if (temporalReset) return Vector2f(0.0f);
     if (debugView != GraphicsDebugView::FINAL) return Vector2f(0.0f);
     if (extent.width == 0 || extent.height == 0) return Vector2f(0.0f);
     if (!taaHistoryValid || taaFrameIndex == 0) return Vector2f(0.0f);

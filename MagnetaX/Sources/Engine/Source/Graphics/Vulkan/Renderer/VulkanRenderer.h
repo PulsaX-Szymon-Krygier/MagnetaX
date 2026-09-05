@@ -153,7 +153,7 @@ public:
 
     void SetDebugView(GraphicsDebugView view) { debugView = view; }
 
-    Vector2f GetProjectionJitter(VkExtent2D extent) const;
+    Vector2f GetProjectionJitter(VkExtent2D extent, bool temporalReset = false) const;
 
 private:
     VulkanDevice* device = nullptr;

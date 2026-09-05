@@ -22,18 +22,21 @@ void main()
 
     float depth = texelFetch(depthTexture, coord, 0).r;
 
-    if (depth < 0.999999)
+    if (depth < 1.0)
     {
         discard;
     }
 
     vec2 currentNDC = fragUV * 2.0 - 1.0;
 
-    vec4 currentClip = vec4(currentNDC, depth, 1.0);
-    vec4 worldPosition = pc.invViewProj * currentClip;
-    worldPosition /= worldPosition.w;
+    vec4 currentNearH = pc.invViewProj * vec4(currentNDC, 0.0, 1.0);
+    vec4 currentFarH = pc.invViewProj * vec4(currentNDC, 1.0, 1.0);
 
-    vec4 prevClip = pc.prevViewProj * worldPosition;
+    vec3 currentNear = currentNearH.xyz / currentNearH.w;
+    vec3 currentFar = currentFarH.xyz / currentFarH.w;
+    vec3 worldDirection = normalize(currentFar - currentNear);
+
+    vec4 prevClip = pc.prevViewProj * vec4(worldDirection, 0.0);
 
     if (prevClip.w <= 0.0)
     {
@@ -41,10 +44,8 @@ void main()
         return;
     }
 
-    vec3 prevNDC = prevClip.xyz / prevClip.w;
+    vec2 prevNDC = prevClip.xy / prevClip.w;
+    vec2 velocityUV = 0.5 * (currentNDC - prevNDC);
 
-    vec2 velocityUV = 0.5 * (currentNDC - prevNDC.xy);
-    float depthDelta = prevNDC.z - depth;
-
-    outVelocity = vec4(velocityUV, depthDelta, 0.0);
+    outVelocity = vec4(velocityUV, 0.0, 1.0);
 }

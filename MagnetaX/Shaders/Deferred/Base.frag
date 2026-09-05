@@ -50,11 +50,17 @@ void main()
     outNormal = vec4(normal, 1.0);
     outMaterial = vec4(roughness, metallic, ambientOcclusion, 0.0);
 
+    if (fragPrevStableClip.w <= 0.0)
+    {
+        outVelocity = vec4(0.0);
+        return;
+    }
+
     vec3 currentStableNDC = fragCurrentStableClip.xyz / fragCurrentStableClip.w;
     vec3 prevStableNDC = fragPrevStableClip.xyz / fragPrevStableClip.w;
 
     vec2 velocityUV = 0.5 * (currentStableNDC.xy - prevStableNDC.xy);
     float depthDelta = prevStableNDC.z - currentStableNDC.z;
 
-    outVelocity = vec4(velocityUV, depthDelta, 0.0);
+    outVelocity = vec4(velocityUV, depthDelta, 1.0);
 }

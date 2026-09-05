@@ -1,5 +1,12 @@
 // Copyright (c) 2026 PulsaX Szymon Krygier
 // SPDX-License-Identifier: MPL-2.0
+
+// Temporal AA implementation based on
+// techniques and reference implementations by:
+// Playdead - Temporal Reprojection Anti-Aliasing for INSIDE
+// Intel GameTechDev - Temporal Anti-Aliasing
+// Marco Salvi - An Excursion in Temporal Supersampling
+// Brian Karis - High Quality Temporal Supersampling
 #version 450
 
 layout(location = 0) in vec2 fragUV;
@@ -26,25 +33,6 @@ float Luminance(vec3 color)
     return dot(color, vec3(0.2126, 0.7152, 0.0722));
 }
 
-vec3 ClipHistory(vec3 history, vec3 boxMin, vec3 boxMax)
-{
-    const float epsilon = 0.000001;
-
-    vec3 center = 0.5 * (boxMin + boxMax);
-    vec3 extent = 0.5 * (boxMax - boxMin) + vec3(epsilon);
-    vec3 offset = history - center;
-
-    vec3 unitOffset = abs(offset / extent);
-    float maxUnit = max(unitOffset.x, max(unitOffset.y, unitOffset.z));
-
-    if (maxUnit > 1.0)
-    {
-        return center + offset / maxUnit;
-    }
-
-    return history;
-}
-
 vec3 RGBToYCoCg(vec3 color)
 {
     return vec3(dot(color, vec3(0.25, 0.5, 0.25)), dot(color, vec3(0.5, 0.0, -0.5)),
@@ -56,7 +44,7 @@ vec3 YCoCgToRGB(vec3 color)
     return vec3(color.x + color.y - color.z, color.x + color.z, color.x - color.y - color.z);
 }
 
-void GetRoundedNeighborhood(vec2 uv, vec2 texelSize, out vec3 boxMin, out vec3 boxMax, out vec3 mean, out vec3 stdDev)
+void GetRoundedNeighborhood(vec2 uv, vec2 texelSize, out vec3 mean, out vec3 stdDev)
 {
     vec3 topLeft = texture(currentColor, uv + vec2(-texelSize.x, -texelSize.y)).rgb;
     vec3 top = texture(currentColor, uv + vec2(0.0, -texelSize.y)).rgb;
@@ -91,18 +79,9 @@ void GetRoundedNeighborhood(vec2 uv, vec2 texelSize, out vec3 boxMin, out vec3 b
 
     vec3 variance = max(moment2 / 9.0 - mean * mean, vec3(0.0));
     stdDev = sqrt(variance);
-
-    vec3 min9 = min(topLeft, min(top, min(topRight, min(left, min(center, min(right, min(bottomLeft, min(bottom, bottomRight))))))));
-    vec3 max9 = max(topLeft, max(top, max(topRight, max(left, max(center, max(right, max(bottomLeft, max(bottom, bottomRight))))))));
-
-    vec3 min5 = min(top, min(left, min(center, min(right, bottom))));
-    vec3 max5 = max(top, max(left, max(center, max(right, bottom))));
-
-    boxMin = 0.5 * (min9 + min5);
-    boxMax = 0.5 * (max9 + max5);
 }
 
-vec3 GetClosestVelocity(vec2 uv, out float closestDepth)
+vec4 GetClosestVelocity(vec2 uv, out float closestDepth, out vec2 closestUV)
 {
     ivec2 imageSize = textureSize(depthTexture, 0);
     ivec2 maxCoord = imageSize - ivec2(1);
@@ -126,7 +105,9 @@ vec3 GetClosestVelocity(vec2 uv, out float closestDepth)
         }
     }
 
-    return texelFetch(velocityTexture, closestCoord, 0).xyz;
+    closestUV = (vec2(closestCoord) + vec2(0.5)) / vec2(imageSize);
+
+    return texelFetch(velocityTexture, closestCoord, 0);
 }
 
 vec4 SampleHistoryCatmullRom(vec2 uv)
@@ -171,23 +152,6 @@ float GetPreviousDepth(vec2 uv)
     return max(max(depths.x, depths.y), max(depths.z, depths.w));
 }
 
-vec3 ClipToAABB(vec3 history, vec3 current, vec3 center, vec3 extent)
-{
-    vec3 direction = current - history;
-    vec3 intersection = ((center - sign(direction) * extent) - history) / direction;
-
-    const float maxT = 10000.0;
-
-    vec3 possibleT = vec3(maxT + 1.0);
-    if (intersection.x >= 0.0) possibleT.x = intersection.x;
-    if (intersection.y >= 0.0) possibleT.y = intersection.y;
-    if (intersection.z >= 0.0) possibleT.z = intersection.z;
-
-    float t = min(maxT, min(possibleT.x, min(possibleT.y, possibleT.z)));
-
-    return t < maxT ? history + direction * t : history;
-}
-
 void main()
 {
     vec2 currentUV = fragUV + pc.jitterUV;
@@ -195,24 +159,30 @@ void main()
 
     if (pc.historyValid == 0)
     {
-        //outColor = vec4(current.rgb, 0.5);
         outColor = current;
         return;
     }
 
     float closestDepth = 1.0;
-    vec3 velocity = GetClosestVelocity(fragUV, closestDepth);
+    vec2 closestUV;
+    vec4 velocity = GetClosestVelocity(fragUV, closestDepth, closestUV);
 
-    vec2 previousUV = fragUV - velocity.xy;
-    float expectedPreviousDepth = closestDepth + velocity.z;
-
-    if (any(lessThan(previousUV, vec2(0.0))) || any(greaterThan(previousUV, vec2(1.0))))
+    if (velocity.w < 0.5)
     {
         outColor = current;
         return;
     }
 
-    vec2 previousDepthUV = previousUV + pc.prevJitterUV;
+    vec2 previousUV = fragUV - velocity.xy;
+    float expectedPreviousDepth = closestDepth + velocity.z;
+
+    if (any(lessThan(previousUV, vec2(0.0))) || any(greaterThanEqual(previousUV, vec2(1.0))))
+    {
+        outColor = current;
+        return;
+    }
+
+    vec2 previousDepthUV = closestUV - pc.jitterUV - velocity.xy + pc.prevJitterUV;
 
     if (any(lessThan(previousDepthUV, vec2(0.0))) || any(greaterThanEqual(previousDepthUV, vec2(1.0))))
     {
@@ -222,9 +192,11 @@ void main()
 
     float previousDepth = GetPreviousDepth(previousDepthUV);
 
-    const float depthBias = 0.001;
+    const float depthFloatEpsilon = 0.0000002;
+    const float velocityDepthEpsilon = abs(velocity.z) / 512.0;
+    float depthEpsilon = max(depthFloatEpsilon, velocityDepthEpsilon);
 
-    if (expectedPreviousDepth > previousDepth + depthBias)
+    if (expectedPreviousDepth > previousDepth + depthEpsilon)
     {
         outColor = current;
         return;
@@ -232,13 +204,10 @@ void main()
 
     vec2 texelSize = 1.0 / vec2(textureSize(currentColor, 0));
 
-    vec3 neighborhoodMin;
-    vec3 neighborhoodMax;
     vec3 neighborhoodMean;
     vec3 neighborhoodStdDev;
 
-    GetRoundedNeighborhood(fragUV, texelSize, neighborhoodMin, neighborhoodMax, neighborhoodMean, neighborhoodStdDev);
-    //GetRoundedNeighborhood(currentUV, texelSize, neighborhoodMin, neighborhoodMax, neighborh oodMean, neighborhoodStdDev);
+    GetRoundedNeighborhood(fragUV, texelSize, neighborhoodMean, neighborhoodStdDev);    
 
     vec4 history = SampleHistoryCatmullRom(previousUV);
 
@@ -249,17 +218,13 @@ void main()
     float varianceGamma = mix(0.75, 2.0, velocityConfidence * velocityConfidence);
 
     vec3 varianceExtent = neighborhoodStdDev * varianceGamma;
-    vec3 varianceMin = YCoCgToRGB(neighborhoodMean - varianceExtent);
-    vec3 varianceMax = YCoCgToRGB(neighborhoodMean + varianceExtent);
+    vec3 varianceMin = neighborhoodMean - varianceExtent;
+    vec3 varianceMax = neighborhoodMean + varianceExtent;
 
     vec3 historyYCoCg = RGBToYCoCg(history.rgb);
-    vec3 currentYCoCg = RGBToYCoCg(current.rgb);
+    historyYCoCg = clamp(historyYCoCg, varianceMin, varianceMax);
 
-    history.rgb = clamp(history.rgb, varianceMin, varianceMax);
-    //history.rgb = YCoCgToRGB(ClipToAABB(historyYCoCg, currentYCoCg, neighborhoodMean, varianceExtent));
-
-    //outColor = history;
-    //return;
+    history.rgb = YCoCgToRGB(historyYCoCg);
 
     float currentLuminance = Luminance(current.rgb);
     float historyLuminance = Luminance(history.rgb);
