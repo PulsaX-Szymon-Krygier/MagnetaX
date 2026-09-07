@@ -594,6 +594,11 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
             taaInfo.jitterUV = sceneData.viewData.jitter * 0.5f;
             taaInfo.feedbackMin = config.aa.taa.feedbackMin;
             taaInfo.feedbackMax = config.aa.taa.feedbackMax;
+            taaInfo.nearPlane = sceneData.viewData.nearPlane;
+            taaInfo.farPlane = sceneData.viewData.farPlane;
+            taaInfo.projScale = Vector2f(sceneData.viewData.proj.m00, sceneData.viewData.proj.m11);
+            taaInfo.currentViewProj = sceneData.viewData.viewProj;
+            taaInfo.previousInvViewProj = prevFrameValid ? prevInvViewProj : sceneData.viewData.invViewProj;
 
             toneMapSourceView = taa.Resolve(taaInfo);
         }
@@ -699,6 +704,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
         prevViewProj = sceneData.viewData.viewProj;
         prevProj = sceneData.viewData.proj;
         prevCameraId = sceneData.viewData.cameraId;
+        prevInvViewProj = sceneData.viewData.invViewProj;
 
         prevObjectModels.clear();
         prevObjectModels.reserve(drawItems.size());
@@ -843,6 +849,7 @@ void VulkanRenderer::ResetTemporalHistory()
     prevObjectModels.clear();
     framePrevModels.clear();
     prevProj = Matrix4f::Identity();
+    prevInvViewProj = Matrix4f::Identity();
     prevCameraId = 0;
 }
 #endif

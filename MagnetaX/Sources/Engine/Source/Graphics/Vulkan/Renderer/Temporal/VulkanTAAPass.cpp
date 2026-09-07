@@ -18,6 +18,16 @@ namespace
         float32 feedbackMin;
         float32 feedbackMax;
         uint32 historyValid;
+        float32 nearPlane;
+        float32 farPlane;
+        float32 padding;
+        Vector2f projScale;
+    };
+
+    struct TAAFrameData
+    {
+        Matrix4f currentViewProj;
+        Matrix4f previousInvViewProj;
     };
 }
 
@@ -27,6 +37,7 @@ bool VulkanTAAPass::Create(const VulkanTAAPassCreateInfo& createInfo)
     if (!createInfo.currentColor->GetImageView()) return false;
     if (!createInfo.velocityImage->GetImageView() || !createInfo.depthImage->GetImageView()) return false;
     if (createInfo.outFormat == VK_FORMAT_UNDEFINED) return false;
+    if (!createInfo.reconstrPrevDepthImage || !createInfo.reconstrPrevDepthImage->GetImageView()) return false;
 
     const VkDevice buffDevice = createInfo.device->GetDevice();
     if (!buffDevice) return false;
@@ -35,7 +46,7 @@ bool VulkanTAAPass::Create(const VulkanTAAPassCreateInfo& createInfo)
 
     device = buffDevice;
 
-    VkDescriptorSetLayoutBinding bindings[5]{};
+    VkDescriptorSetLayoutBinding bindings[9]{};
 
     bindings[0].binding = 0;
     bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -62,7 +73,27 @@ bool VulkanTAAPass::Create(const VulkanTAAPassCreateInfo& createInfo)
     bindings[4].descriptorCount = 1;
     bindings[4].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    const VkDescriptorSetLayoutCreateInfo layoutInfo = VulkanInitializers::DescriptorSetLayoutCreateInfo(5, bindings);
+    bindings[5].binding = 5;
+    bindings[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    bindings[5].descriptorCount = 1;
+    bindings[5].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    bindings[6].binding = 6;
+    bindings[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[6].descriptorCount = 1;
+    bindings[6].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    bindings[7].binding = 7;
+    bindings[7].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[7].descriptorCount = 1;
+    bindings[7].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    bindings[8].binding = 8;
+    bindings[8].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    bindings[8].descriptorCount = 1;
+    bindings[8].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    const VkDescriptorSetLayoutCreateInfo layoutInfo = VulkanInitializers::DescriptorSetLayoutCreateInfo(9, bindings);
 
     if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descSetLayout) != VK_SUCCESS)
     {
@@ -88,11 +119,26 @@ bool VulkanTAAPass::Create(const VulkanTAAPassCreateInfo& createInfo)
         return false;
     }
 
-    VkDescriptorPoolSize poolSize{};
-    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = 5;
+    const VkMemoryPropertyFlags memoryProps = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
-    const VkDescriptorPoolCreateInfo poolInfo = VulkanInitializers::DescriptorPoolCreateInfo(1, 1, &poolSize);
+    if (!frameDataBuffer.Create(createInfo.device, sizeof(TAAFrameData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, memoryProps))
+    {
+        Destroy();
+        return false;
+    }
+
+    VkDescriptorPoolSize poolSizes[3]{};
+
+    poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[0].descriptorCount = 7;
+
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    poolSizes[1].descriptorCount = 1;
+
+    poolSizes[2].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSizes[2].descriptorCount = 1;
+
+    const VkDescriptorPoolCreateInfo poolInfo = VulkanInitializers::DescriptorPoolCreateInfo(1, 3, poolSizes);
 
     if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descPool) != VK_SUCCESS)
     {
@@ -107,6 +153,21 @@ bool VulkanTAAPass::Create(const VulkanTAAPassCreateInfo& createInfo)
         Destroy();
         return false;
     }
+
+    VkDescriptorBufferInfo frameBufferInfo{};
+    frameBufferInfo.buffer = frameDataBuffer.GetBuffer();
+    frameBufferInfo.offset = 0;
+    frameBufferInfo.range = sizeof(TAAFrameData);
+
+    VkWriteDescriptorSet frameWrite{};
+    frameWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    frameWrite.dstSet = descSet;
+    frameWrite.dstBinding = 8;
+    frameWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    frameWrite.descriptorCount = 1;
+    frameWrite.pBufferInfo = &frameBufferInfo;
+
+    vkUpdateDescriptorSets(device, 1, &frameWrite, 0, nullptr);
 
     VkDescriptorImageInfo imageInfos[4]{};
 
@@ -158,18 +219,39 @@ bool VulkanTAAPass::Create(const VulkanTAAPassCreateInfo& createInfo)
 
     vkUpdateDescriptorSets(device, 4, writeSets, 0, nullptr);
 
+    VkDescriptorImageInfo reconstructedDepthInfo{};
+    reconstructedDepthInfo.imageView = createInfo.reconstrPrevDepthImage->GetImageView();
+    reconstructedDepthInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+    VkWriteDescriptorSet reconstructedDepthWrite{};
+    reconstructedDepthWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    reconstructedDepthWrite.dstSet = descSet;
+    reconstructedDepthWrite.dstBinding = 5;
+    reconstructedDepthWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    reconstructedDepthWrite.descriptorCount = 1;
+    reconstructedDepthWrite.pImageInfo = &reconstructedDepthInfo;
+
+    vkUpdateDescriptorSets(device, 1, &reconstructedDepthWrite, 0, nullptr);
+
     VkPushConstantRange pushConstRange{};
     pushConstRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     pushConstRange.offset = 0;
     pushConstRange.size = sizeof(TAAPushConstants);
+
+    const VkFormat colorFormats[3] =
+    {
+        createInfo.outFormat,
+        createInfo.outFormat,
+        createInfo.outFormat
+    };
 
     VulkanPipelineCreateInfo pipelineInfo{};
     pipelineInfo.vertexShader = MX_GRAPHICS_VULKAN_SHADER_FULLSCREEN_VERT;
     pipelineInfo.vertexShaderSize = MX_GRAPHICS_VULKAN_SHADER_FULLSCREEN_VERT_SIZE;
     pipelineInfo.fragmentShader = MX_GRAPHICS_VULKAN_SHADER_TAA_FRAG;
     pipelineInfo.fragmentShaderSize = MX_GRAPHICS_VULKAN_SHADER_TAA_FRAG_SIZE;
-    pipelineInfo.colorFormats = &createInfo.outFormat;
-    pipelineInfo.colorFormatCount = 1;
+    pipelineInfo.colorFormats = colorFormats;
+    pipelineInfo.colorFormatCount = 3;
     pipelineInfo.descriptorSetLayouts = &descSetLayout;
     pipelineInfo.descriptorSetLayoutCount = 1;
     pipelineInfo.pushConstantRanges = &pushConstRange;
@@ -200,6 +282,8 @@ void VulkanTAAPass::Destroy()
     descSetLayout = VK_NULL_HANDLE;
     sampler = VK_NULL_HANDLE;
 
+    frameDataBuffer.Destroy();
+
     device = VK_NULL_HANDLE;
 }
 
@@ -208,6 +292,14 @@ void VulkanTAAPass::Record(const VulkanTAAPassRenderInfo& renderInfo)
     if (!renderInfo.cmdBuffer || !renderInfo.historyView || !renderInfo.targetView) return;
     if (renderInfo.extent.width == 0 || renderInfo.extent.height == 0) return;
     if (!renderInfo.previousDepthView) return;
+    if (!renderInfo.targetSupportMeanView || !renderInfo.targetSupportSigmaView) return;
+    if (!renderInfo.previousSupportMeanView || !renderInfo.previousSupportSigmaView) return;
+
+    TAAFrameData frameData{};
+    frameData.currentViewProj = renderInfo.currentViewProj.Transposed();
+    frameData.previousInvViewProj = renderInfo.previousInvViewProj.Transposed();
+
+    if (!frameDataBuffer.Upload(&frameData, sizeof(TAAFrameData))) return;
 
     VkDescriptorImageInfo historyImageInfo{};
     historyImageInfo.sampler = sampler;
@@ -219,7 +311,17 @@ void VulkanTAAPass::Record(const VulkanTAAPassRenderInfo& renderInfo)
     previousDepthImageInfo.imageView = renderInfo.previousDepthView;
     previousDepthImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    VkWriteDescriptorSet dynamicWrites[2]{};
+    VkDescriptorImageInfo previousSupportMeanInfo{};
+    previousSupportMeanInfo.sampler = sampler;
+    previousSupportMeanInfo.imageView = renderInfo.previousSupportMeanView;
+    previousSupportMeanInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkDescriptorImageInfo previousSupportSigmaInfo{};
+    previousSupportSigmaInfo.sampler = sampler;
+    previousSupportSigmaInfo.imageView = renderInfo.previousSupportSigmaView;
+    previousSupportSigmaInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkWriteDescriptorSet dynamicWrites[4]{};
 
     dynamicWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     dynamicWrites[0].dstSet = descSet;
@@ -235,23 +337,47 @@ void VulkanTAAPass::Record(const VulkanTAAPassRenderInfo& renderInfo)
     dynamicWrites[1].descriptorCount = 1;
     dynamicWrites[1].pImageInfo = &previousDepthImageInfo;
 
-    vkUpdateDescriptorSets(device, 2, dynamicWrites, 0, nullptr);
+    dynamicWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    dynamicWrites[2].dstSet = descSet;
+    dynamicWrites[2].dstBinding = 6;
+    dynamicWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    dynamicWrites[2].descriptorCount = 1;
+    dynamicWrites[2].pImageInfo = &previousSupportMeanInfo;
 
-    VkRenderingAttachmentInfo colorAttachment{};
-    colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    colorAttachment.imageView = renderInfo.targetView;
-    colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachment.clearValue.color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
-    colorAttachment.pNext = nullptr;
+    dynamicWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    dynamicWrites[3].dstSet = descSet;
+    dynamicWrites[3].dstBinding = 7;
+    dynamicWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    dynamicWrites[3].descriptorCount = 1;
+    dynamicWrites[3].pImageInfo = &previousSupportSigmaInfo;
+
+    vkUpdateDescriptorSets(device, 4, dynamicWrites, 0, nullptr);
+
+    VkRenderingAttachmentInfo colorAttachments[3]{};
+
+    const VkImageView targetViews[3] =
+    {
+        renderInfo.targetView,
+        renderInfo.targetSupportMeanView,
+        renderInfo.targetSupportSigmaView
+    };
+
+    for (uint32 i = 0; i < 3; ++i)
+    {
+        colorAttachments[i].sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        colorAttachments[i].imageView = targetViews[i];
+        colorAttachments[i].imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        colorAttachments[i].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        colorAttachments[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        colorAttachments[i].clearValue.color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
+    }
 
     VkRenderingInfo renderingInfo{};
     renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
     renderingInfo.renderArea = { { 0, 0 }, renderInfo.extent };
     renderingInfo.layerCount = 1;
-    renderingInfo.colorAttachmentCount = 1;
-    renderingInfo.pColorAttachments = &colorAttachment;
+    renderingInfo.colorAttachmentCount = 3;
+    renderingInfo.pColorAttachments = colorAttachments;
     renderingInfo.pNext = nullptr;
 
     vkCmdBeginRendering(renderInfo.cmdBuffer, &renderingInfo);
@@ -279,6 +405,9 @@ void VulkanTAAPass::Record(const VulkanTAAPassRenderInfo& renderInfo)
     pushConstants.historyValid = renderInfo.historyValid ? 1u : 0u;
     pushConstants.jitterUV = renderInfo.jitterUV;
     pushConstants.prevJitterUV = renderInfo.prevJitterUV;
+    pushConstants.nearPlane = renderInfo.nearPlane;
+    pushConstants.farPlane = renderInfo.farPlane;
+    pushConstants.projScale = renderInfo.projScale;
 
     vkCmdPushConstants(renderInfo.cmdBuffer, pipeline.GetPipelineLayout(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(TAAPushConstants), &pushConstants);
     vkCmdBindDescriptorSets(renderInfo.cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.GetPipelineLayout(), 0, 1, &descSet, 0, nullptr);

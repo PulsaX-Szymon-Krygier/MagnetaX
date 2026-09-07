@@ -4,6 +4,7 @@
 
 #if MX_GRAPHICS_VULKAN
 #include <Graphics/Vulkan/VulkanInitializers.h>
+#include <bit>
 
 namespace
 {
@@ -45,6 +46,42 @@ bool VulkanTAA::Create(const VulkanTAACreateInfo& createInfo)
     velocityImage = createInfo.velocityImage;
     depthImage = createInfo.depthImage;
 
+    VulkanImageCreateInfo dilatedDepthInfo{};
+    dilatedDepthInfo.device = createInfo.device;
+    dilatedDepthInfo.extent = createInfo.extent;
+    dilatedDepthInfo.format = ImageFormat::R32_FLOAT;
+    dilatedDepthInfo.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+    if (!dilatedDepth.Create(dilatedDepthInfo))
+    {
+        Destroy();
+        return false;
+    }
+
+    VulkanImageCreateInfo dilatedVelocityInfo{};
+    dilatedVelocityInfo.device = createInfo.device;
+    dilatedVelocityInfo.extent = createInfo.extent;
+    dilatedVelocityInfo.format = ImageFormat::RGBA16_FLOAT;
+    dilatedVelocityInfo.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+    if (!dilatedVelocity.Create(dilatedVelocityInfo))
+    {
+        Destroy();
+        return false;
+    }
+
+    VulkanImageCreateInfo reconstructedDepthInfo{};
+    reconstructedDepthInfo.device = createInfo.device;
+    reconstructedDepthInfo.extent = createInfo.extent;
+    reconstructedDepthInfo.format = ImageFormat::R32_UINT;
+    reconstructedDepthInfo.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+
+    if (!reconstructedPrevDepth.Create(reconstructedDepthInfo))
+    {
+        Destroy();
+        return false;
+    }
+
     VulkanImageCreateInfo historyInfo{};
     historyInfo.device = createInfo.device;
     historyInfo.extent = createInfo.extent;
@@ -75,6 +112,24 @@ bool VulkanTAA::Create(const VulkanTAACreateInfo& createInfo)
         }
     }
 
+    for (VulkanImage& image : supportMean)
+    {
+        if (!image.Create(historyInfo))
+        {
+            Destroy();
+            return false;
+        }
+    }
+
+    for (VulkanImage& image : supportSigma)
+    {
+        if (!image.Create(historyInfo))
+        {
+            Destroy();
+            return false;
+        }
+    }
+
     VulkanCamVelocityPassCreateInfo camVelocityInfo{};
     camVelocityInfo.device = createInfo.device;
     camVelocityInfo.depthImage = createInfo.depthImage;
@@ -86,12 +141,27 @@ bool VulkanTAA::Create(const VulkanTAACreateInfo& createInfo)
         return false;
     }
 
+    VulkanTAAPreparePassCreateInfo prepareInfo{};
+    prepareInfo.device = createInfo.device;
+    prepareInfo.depthImage = createInfo.depthImage;
+    prepareInfo.velocityImage = createInfo.velocityImage;
+    prepareInfo.dilatedDepthImage = &dilatedDepth;
+    prepareInfo.dilatedVelocityImage = &dilatedVelocity;
+    prepareInfo.reconstructedPrevDepthImage = &reconstructedPrevDepth;
+
+    if (!preparePass.Create(prepareInfo))
+    {
+        Destroy();
+        return false;
+    }
+
     VulkanTAAPassCreateInfo taaInfo{};
     taaInfo.device = createInfo.device;
     taaInfo.currentColor = createInfo.currentColor;
     taaInfo.outFormat = history[0].GetFormat();
     taaInfo.velocityImage = createInfo.velocityImage;
     taaInfo.depthImage = createInfo.depthImage;
+    taaInfo.reconstrPrevDepthImage = &reconstructedPrevDepth;
 
     if (!taaPass.Create(taaInfo))
     {
@@ -105,7 +175,22 @@ bool VulkanTAA::Create(const VulkanTAACreateInfo& createInfo)
 void VulkanTAA::Destroy()
 {
     taaPass.Destroy();
+    preparePass.Destroy();
     camVelocityPass.Destroy();
+
+    reconstructedPrevDepth.Destroy();
+    dilatedVelocity.Destroy();
+    dilatedDepth.Destroy();
+
+    for (VulkanImage& image : supportSigma)
+    {
+        image.Destroy();
+    }
+
+    for (VulkanImage& image : supportMean)
+    {
+        image.Destroy();
+    }
 
     for (VulkanImage& image : depthHistory)
     {
@@ -119,6 +204,13 @@ void VulkanTAA::Destroy()
 
     historyLayouts = { VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED };
     depthHistoryLayouts = { VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED };
+
+    reconstructedPrevDepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    dilatedVelocityLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    dilatedDepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    supportMeanLayouts = { VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED };
+    supportSigmaLayouts = { VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED };
 
     ResetHistory();
 
@@ -157,7 +249,7 @@ void VulkanTAA::RecordCameraVelocity(VkCommandBuffer cmdBuffer, const Matrix4f& 
     const VkImageMemoryBarrier2 velocityReadBarrier = VulkanInitializers::ImageMemoryBarrier(velocityImage->GetImage(), 
         VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 
         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, 
-        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
 
     dependencyInfo.pImageMemoryBarriers = &velocityReadBarrier;
 
@@ -169,10 +261,18 @@ VkImageView VulkanTAA::Resolve(const VulkanTAAResolveInfo& resolveInfo)
     if (!resolveInfo.cmdBuffer || !depthImage) return VK_NULL_HANDLE;
     if (extent.width == 0 || extent.height == 0) return VK_NULL_HANDLE;
 
+    RecordPrepare(resolveInfo.cmdBuffer, resolveInfo.jitterUV);
+
     const uint32 historyWriteIndex = 1u - historyReadIndex;
 
     VulkanImage& historyRead = history[historyReadIndex];
     VulkanImage& historyWrite = history[historyWriteIndex];
+
+    VulkanImage& supportMeanRead = supportMean[historyReadIndex];
+    VulkanImage& supportSigmaRead = supportSigma[historyReadIndex];
+
+    VulkanImage& supportMeanWrite = supportMean[historyWriteIndex];
+    VulkanImage& supportSigmaWrite = supportSigma[historyWriteIndex];
 
     VulkanImage& depthHistoryRead = depthHistory[historyReadIndex];
     VulkanImage& depthHistoryWrite = depthHistory[historyWriteIndex];
@@ -180,6 +280,12 @@ VkImageView VulkanTAA::Resolve(const VulkanTAAResolveInfo& resolveInfo)
     VkImageLayout& historyReadLayout = historyLayouts[historyReadIndex];
     VkImageLayout& historyWriteLayout = historyLayouts[historyWriteIndex];
     VkImageLayout& depthHistoryWriteLayout = depthHistoryLayouts[historyWriteIndex];
+
+    VkImageLayout& supportMeanWriteLayout = supportMeanLayouts[historyWriteIndex];
+    VkImageLayout& supportSigmaWriteLayout = supportSigmaLayouts[historyWriteIndex];
+
+    VkImageLayout& supportMeanReadLayout = supportMeanLayouts[historyReadIndex];
+    VkImageLayout& supportSigmaReadLayout = supportSigmaLayouts[historyReadIndex];
 
     VkDependencyInfo dependencyInfo{};
     dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -196,7 +302,7 @@ VkImageView VulkanTAA::Resolve(const VulkanTAAResolveInfo& resolveInfo)
     const VkImageMemoryBarrier2 depthCopyBarriers[2] =
     {
         VulkanInitializers::ImageMemoryBarrier(depthImage->GetImage(), VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, 
-            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, 
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
             VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT),
 
         VulkanInitializers::ImageMemoryBarrier(depthHistoryWrite.GetImage(), VK_IMAGE_ASPECT_DEPTH_BIT, depthHistoryWriteLayout, 
@@ -255,6 +361,34 @@ VkImageView VulkanTAA::Resolve(const VulkanTAAResolveInfo& resolveInfo)
         historyReadLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     }
 
+    if (supportMeanReadLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+    {
+        const VkImageMemoryBarrier2 supportMeanReadBarrier = VulkanInitializers::ImageMemoryBarrier(supportMeanRead.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, 
+            supportMeanReadLayout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, 
+            VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+
+        dependencyInfo.imageMemoryBarrierCount = 1;
+        dependencyInfo.pImageMemoryBarriers = &supportMeanReadBarrier;
+
+        vkCmdPipelineBarrier2(resolveInfo.cmdBuffer, &dependencyInfo);
+
+        supportMeanReadLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    }
+
+    if (supportSigmaReadLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+    {
+        const VkImageMemoryBarrier2 supportSigmaReadBarrier = VulkanInitializers::ImageMemoryBarrier(supportSigmaRead.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, 
+            supportSigmaReadLayout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, 
+            VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+
+        dependencyInfo.imageMemoryBarrierCount = 1;
+        dependencyInfo.pImageMemoryBarriers = &supportSigmaReadBarrier;
+
+        vkCmdPipelineBarrier2(resolveInfo.cmdBuffer, &dependencyInfo);
+
+        supportSigmaReadLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    }
+
     VkPipelineStageFlags2 historyWriteSrcStage = VK_PIPELINE_STAGE_2_NONE;
     VkAccessFlags2 historyWriteSrcAccess = VK_ACCESS_2_NONE;
 
@@ -264,16 +398,47 @@ VkImageView VulkanTAA::Resolve(const VulkanTAAResolveInfo& resolveInfo)
         historyWriteSrcAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
     }
 
-    const VkImageMemoryBarrier2 historyWriteBarrier = VulkanInitializers::ImageMemoryBarrier(historyWrite.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, 
-        historyWriteLayout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, historyWriteSrcStage, historyWriteSrcAccess, 
-        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+    VkPipelineStageFlags2 supportMeanWriteSrcStage = VK_PIPELINE_STAGE_2_NONE;
+    VkAccessFlags2 supportMeanWriteSrcAccess = VK_ACCESS_2_NONE;
 
-    dependencyInfo.imageMemoryBarrierCount = 1;
-    dependencyInfo.pImageMemoryBarriers = &historyWriteBarrier;
+    if (supportMeanWriteLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+    {
+        supportMeanWriteSrcStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        supportMeanWriteSrcAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+    }
+
+    VkPipelineStageFlags2 supportSigmaWriteSrcStage = VK_PIPELINE_STAGE_2_NONE;
+    VkAccessFlags2 supportSigmaWriteSrcAccess = VK_ACCESS_2_NONE;
+
+    if (supportSigmaWriteLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+    {
+        supportSigmaWriteSrcStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        supportSigmaWriteSrcAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+    }
+
+    const VkImageMemoryBarrier2 historyWriteBarriers[3] =
+    {
+        VulkanInitializers::ImageMemoryBarrier(historyWrite.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, historyWriteLayout, 
+            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, historyWriteSrcStage, historyWriteSrcAccess, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 
+            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT),
+
+        VulkanInitializers::ImageMemoryBarrier(supportMeanWrite.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, supportMeanWriteLayout, 
+            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, supportMeanWriteSrcStage, supportMeanWriteSrcAccess, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 
+            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT),
+
+        VulkanInitializers::ImageMemoryBarrier(supportSigmaWrite.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, supportSigmaWriteLayout, 
+            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, supportSigmaWriteSrcStage, supportSigmaWriteSrcAccess, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 
+            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT)
+    };
+
+    dependencyInfo.imageMemoryBarrierCount = 3;
+    dependencyInfo.pImageMemoryBarriers = historyWriteBarriers;
 
     vkCmdPipelineBarrier2(resolveInfo.cmdBuffer, &dependencyInfo);
 
     historyWriteLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    supportMeanWriteLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    supportSigmaWriteLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     VulkanTAAPassRenderInfo taaInfo{};
     taaInfo.cmdBuffer = resolveInfo.cmdBuffer;
@@ -286,18 +451,41 @@ VkImageView VulkanTAA::Resolve(const VulkanTAAResolveInfo& resolveInfo)
     taaInfo.feedbackMin = resolveInfo.feedbackMin;
     taaInfo.feedbackMax = resolveInfo.feedbackMax;
     taaInfo.historyValid = historyValid;
+    taaInfo.targetSupportMeanView = supportMeanWrite.GetImageView();
+    taaInfo.targetSupportSigmaView = supportSigmaWrite.GetImageView();
+    taaInfo.previousSupportMeanView = supportMeanRead.GetImageView();
+    taaInfo.previousSupportSigmaView = supportSigmaRead.GetImageView();
+    taaInfo.currentViewProj = resolveInfo.currentViewProj;
+    taaInfo.previousInvViewProj = resolveInfo.previousInvViewProj;
+    taaInfo.nearPlane = resolveInfo.nearPlane;
+    taaInfo.farPlane = resolveInfo.farPlane;
+    taaInfo.projScale = resolveInfo.projScale;
 
     taaPass.Record(taaInfo);
 
-    const VkImageMemoryBarrier2 outputBarrier = VulkanInitializers::ImageMemoryBarrier(historyWrite.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, 
-        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 
-        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+    const VkImageMemoryBarrier2 outputBarriers[3] =
+    {
+        VulkanInitializers::ImageMemoryBarrier(historyWrite.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, 
+            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT),
 
-    dependencyInfo.pImageMemoryBarriers = &outputBarrier;
+        VulkanInitializers::ImageMemoryBarrier(supportMeanWrite.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, 
+            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT),
+
+        VulkanInitializers::ImageMemoryBarrier(supportSigmaWrite.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, 
+            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT)
+    };
+
+    dependencyInfo.imageMemoryBarrierCount = 3;
+    dependencyInfo.pImageMemoryBarriers = outputBarriers;
 
     vkCmdPipelineBarrier2(resolveInfo.cmdBuffer, &dependencyInfo);
 
     historyWriteLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    supportMeanWriteLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    supportSigmaWriteLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     historyReadIndex = historyWriteIndex;
     frameIndex++;
@@ -321,5 +509,107 @@ Vector2f VulkanTAA::GetProjectionJitter() const
     if (extent.width == 0 || extent.height == 0) return Vector2f(0.0f);
 
     return CalculateJitter(frameIndex, extent);
+}
+
+void VulkanTAA::RecordPrepare(VkCommandBuffer cmdBuffer, const Vector2f& jitterUV)
+{
+    if (!cmdBuffer) return;
+
+    VkDependencyInfo dependencyInfo{};
+    dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+
+    VkPipelineStageFlags2 reconstructedSrcStage = VK_PIPELINE_STAGE_2_NONE;
+    VkAccessFlags2 reconstructedSrcAccess = VK_ACCESS_2_NONE;
+
+    if (reconstructedPrevDepthLayout == VK_IMAGE_LAYOUT_GENERAL)
+    {
+        reconstructedSrcStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        reconstructedSrcAccess = VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+    }
+
+    const VkImageMemoryBarrier2 reconstructedClearBarrier = VulkanInitializers::ImageMemoryBarrier(reconstructedPrevDepth.GetImage(), 
+        VK_IMAGE_ASPECT_COLOR_BIT, reconstructedPrevDepthLayout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, reconstructedSrcStage, 
+        reconstructedSrcAccess, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
+
+    dependencyInfo.imageMemoryBarrierCount = 1;
+    dependencyInfo.pImageMemoryBarriers = &reconstructedClearBarrier;
+
+    vkCmdPipelineBarrier2(cmdBuffer, &dependencyInfo);
+
+    reconstructedPrevDepthLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+
+    VkClearColorValue clearValue{};
+    clearValue.uint32[0] = std::bit_cast<uint32>(1.0f);
+
+    VkImageSubresourceRange clearRange{};
+    clearRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    clearRange.baseMipLevel = 0;
+    clearRange.levelCount = 1;
+    clearRange.baseArrayLayer = 0;
+    clearRange.layerCount = 1;
+
+    vkCmdClearColorImage(cmdBuffer, reconstructedPrevDepth.GetImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clearValue, 1, &clearRange);
+
+    const VkImageMemoryBarrier2 reconstructedWriteBarrier = VulkanInitializers::ImageMemoryBarrier(reconstructedPrevDepth.GetImage(), 
+        VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, 
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
+
+    dependencyInfo.pImageMemoryBarriers = &reconstructedWriteBarrier;
+
+    vkCmdPipelineBarrier2(cmdBuffer, &dependencyInfo);
+
+    reconstructedPrevDepthLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+    VkPipelineStageFlags2 dilatedDepthSrcStage = VK_PIPELINE_STAGE_2_NONE;
+    VkAccessFlags2 dilatedDepthSrcAccess = VK_ACCESS_2_NONE;
+
+    if (dilatedDepthLayout == VK_IMAGE_LAYOUT_GENERAL)
+    {
+        dilatedDepthSrcStage = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        dilatedDepthSrcAccess = VK_ACCESS_2_SHADER_WRITE_BIT;
+    }
+
+    VkPipelineStageFlags2 dilatedVelocitySrcStage = VK_PIPELINE_STAGE_2_NONE;
+    VkAccessFlags2 dilatedVelocitySrcAccess = VK_ACCESS_2_NONE;
+
+    if (dilatedVelocityLayout == VK_IMAGE_LAYOUT_GENERAL)
+    {
+        dilatedVelocitySrcStage = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        dilatedVelocitySrcAccess = VK_ACCESS_2_SHADER_WRITE_BIT;
+    }
+
+    const VkImageMemoryBarrier2 writeBarriers[2] =
+    {
+        VulkanInitializers::ImageMemoryBarrier(dilatedDepth.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, dilatedDepthLayout, VK_IMAGE_LAYOUT_GENERAL, 
+            dilatedDepthSrcStage, dilatedDepthSrcAccess, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT),
+
+        VulkanInitializers::ImageMemoryBarrier(dilatedVelocity.GetImage(), VK_IMAGE_ASPECT_COLOR_BIT, dilatedVelocityLayout, VK_IMAGE_LAYOUT_GENERAL, 
+            dilatedVelocitySrcStage, dilatedVelocitySrcAccess, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT)
+    };
+
+    dependencyInfo.imageMemoryBarrierCount = 2;
+    dependencyInfo.pImageMemoryBarriers = writeBarriers;
+
+    vkCmdPipelineBarrier2(cmdBuffer, &dependencyInfo);
+
+    dilatedDepthLayout = VK_IMAGE_LAYOUT_GENERAL;
+    dilatedVelocityLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+    VulkanTAAPreparePassRenderInfo prepareInfo{};
+    prepareInfo.cmdBuffer = cmdBuffer;
+    prepareInfo.extent = extent;
+    prepareInfo.jitterUV = jitterUV;
+    prepareInfo.prevJitterUV = prevJitterUV;
+
+    preparePass.Record(prepareInfo);
+
+    const VkImageMemoryBarrier2 reconstructedReadBarrier = VulkanInitializers::ImageMemoryBarrier(reconstructedPrevDepth.GetImage(), 
+        VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, 
+        VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
+
+    dependencyInfo.imageMemoryBarrierCount = 1;
+    dependencyInfo.pImageMemoryBarriers = &reconstructedReadBarrier;
+
+    vkCmdPipelineBarrier2(cmdBuffer, &dependencyInfo);
 }
 #endif

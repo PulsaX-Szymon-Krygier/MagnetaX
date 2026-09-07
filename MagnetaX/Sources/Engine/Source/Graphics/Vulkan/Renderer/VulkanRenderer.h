@@ -183,6 +183,7 @@ private:
     VulkanTAA taa;
     bool prevFrameValid = false;
     Matrix4f prevViewProj = Matrix4f::Identity();
+    Matrix4f prevInvViewProj = Matrix4f::Identity();
     Matrix4f prevProj = Matrix4f::Identity();
     uint32 prevCameraId = 0;
     std::unordered_map<uint32, Matrix4f> prevObjectModels;
