@@ -518,6 +518,7 @@ void main()
     }
 
     bool additionalSupportValid = surfaceValidity >= 0.999 && reconstructionCoverage >= 0.999;
+    //bool additionalSupportValid = true;
 
     float lineEvidence = ComputeRawLineEvidence(currentUV);
     bool currentObserved = lineEvidence > 0.0;
@@ -530,8 +531,6 @@ void main()
 
     if (additionalSupportValid)
     {
-        //GetPreviousSupportMetadata(previousUV, previousMissingAge, previousDrift, previousGuide, previousSupportCoverage);
-        //void GetPreviousSupportMetadata(vec2 uv, out uint missingAge, out float driftPixels, out vec2 guideUV, out float guideInverseDepth, out float activeCoverage)
         GetPreviousSupportMetadata(previousUV, previousMissingAge, previousDrift, previousGuideUV, previousGuide, previousSupportCoverage);
     }
 
@@ -593,7 +592,6 @@ void main()
     }
 
     outSupportMean = vec4(supportMeanValue, supportGuide);
-    //outSupportSigma = vec4(supportStdDevValue, PackSupportState(missingAge, supportActive));
     outSupportSigma = vec4(supportStdDevValue, PackSupportState(missingAge, supportDrift, supportActive));
 
     vec4 history = SampleHistoryCatmullRom(previousUV);
@@ -615,8 +613,8 @@ void main()
     vec3 supportVarianceMax = supportMeanValue + supportVarianceExtent;
 
     float supportAgeWeight = 1.0 - float(missingAge) / 16.0;
-    //float additionalSupportWeight = supportActive ? supportAgeWeight * surfaceValidity : 0.0;
     float additionalSupportWeight = supportActive ? supportCoverage * supportAgeWeight * surfaceValidity : 0.0;
+    //float additionalSupportWeight = supportActive ? 1.0 : 0.0;
 
     vec3 varianceMin = mix(currentVarianceMin, min(currentVarianceMin, supportVarianceMin), additionalSupportWeight);
     vec3 varianceMax = mix(currentVarianceMax, max(currentVarianceMax, supportVarianceMax), additionalSupportWeight);
@@ -644,7 +642,6 @@ void main()
     float historyBudget = min(feedback / max(1.0 - feedback, 0.000001), maxHistoryMass);
     float acceptedHistoryMass = min(max(previousHistoryMass, 0.0), historyBudget);
 
-    //if (!thinLockValid && historyWasClipped) acceptedHistoryMass = min(acceptedHistoryMass, 1.0);
     acceptedHistoryMass *= acceptedHistory;
     acceptedHistoryMass *= surfaceValidity;
 

@@ -29,6 +29,18 @@ float Luminance(vec3 color)
 
 void main()
 {
+    const bool debugTAA = false;
+
+    if (debugTAA)
+    {
+        float historyMass = max(texture(sceneColor, fragUV).a, 0.0);
+        float value = clamp((historyMass - 1.0) / 31.0, 0.0, 1.0);
+        vec3 debugColor = vec3(value);
+
+        outColor = vec4(debugColor, Luminance(debugColor));
+        return;
+    }
+
     vec3 color = texture(sceneColor, fragUV).rgb;
     color *= exp2(pc.exposureEV);
     color = ToneMapACES(color);
