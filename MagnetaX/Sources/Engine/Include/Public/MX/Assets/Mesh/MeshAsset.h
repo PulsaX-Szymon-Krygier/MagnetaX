@@ -15,11 +15,17 @@ public:
     const std::vector<MeshVertex>& GetVertices() const { return vertices; }
     const std::vector<uint32>& GetIndices() const { return indices; }
 
+    const Vector3f& GetLocalBoundsMin() const { return localBoundsMin; }
+    const Vector3f& GetLocalBoundsMax() const { return localBoundsMax; }
+
 private:
     AssetSource source;
 
     std::vector<MeshVertex> vertices;
     std::vector<uint32> indices;
+
+    Vector3f localBoundsMin{};
+    Vector3f localBoundsMax{};
 
     bool flipWinding = false;
 
