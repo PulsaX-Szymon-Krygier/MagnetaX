@@ -90,6 +90,7 @@ RenderSceneData BuildRenderSceneData(Scene* scene, const Size2i& renderSize, con
             if (!meshComponent.mesh) return;
 
             RenderObject object{};
+            object.preserveThinGeometry = meshComponent.preserveThinGeometry;
             object.mesh = meshComponent.mesh;
             object.model = entity.GetWorldMatrix();
             object.mvp = jitteredViewProjMatrix * object.model;

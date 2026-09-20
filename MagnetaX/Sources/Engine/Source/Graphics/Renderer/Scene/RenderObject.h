@@ -9,6 +9,8 @@
 
 struct RenderObject
 {
+    bool preserveThinGeometry = false;
+
     AssetHandle<MeshAsset> mesh;
     AssetHandle<MaterialAsset> material;
 

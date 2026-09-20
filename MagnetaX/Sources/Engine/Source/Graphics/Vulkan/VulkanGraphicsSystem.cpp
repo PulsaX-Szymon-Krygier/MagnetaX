@@ -13,6 +13,7 @@
 #include <Graphics/Vulkan/Resources/VulkanMaterial.h>
 #include <Graphics/Vulkan/Resources/VulkanMesh.h>
 #include <Graphics/Vulkan/Resources/VulkanTexture.h>
+#include <Graphics/Renderer/Scene/ThinGeometryPreserver.h>
 #include "VulkanInitializers.h"
 #include <vector>
 
@@ -302,7 +303,21 @@ void VulkanGraphicsSystem::RenderScene(Scene* scene, AssetManager* assetManager,
                 }
             }
 
-            drawItems.push_back({ mesh, material, object.mvp, object.model, object.id });
+            VulkanDrawItem drawItem{};
+            drawItem.mesh = mesh;
+            drawItem.material = material;
+            drawItem.mvp = object.mvp;
+            drawItem.model = object.model;
+            drawItem.rasterModel = object.model;
+            drawItem.id = object.id;
+
+            if (object.preserveThinGeometry)
+            {
+                drawItem.rasterModel = ThinGeometryPreserver::ComputeRasterModel(object.model, meshAsset->GetLocalBoundsMin(),
+                    meshAsset->GetLocalBoundsMax(), sceneData.viewData.viewProj, renderSize);
+            }
+
+            drawItems.push_back(drawItem);
         }
     }
 

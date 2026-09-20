@@ -461,7 +461,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
         {
             const VulkanDrawItem& drawItem = drawItems[i];
 
-            Matrix4f prevModel = drawItem.model;
+            Matrix4f prevModel = drawItem.rasterModel;
 
             if (prevFrameValid && drawItem.id != 0)
             {
@@ -713,7 +713,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
         {
             if (drawItem.id == 0) continue;
 
-            prevObjectModels[drawItem.id] = drawItem.model;
+            prevObjectModels[drawItem.id] = drawItem.rasterModel;
         }
 
         prevFrameValid = true;

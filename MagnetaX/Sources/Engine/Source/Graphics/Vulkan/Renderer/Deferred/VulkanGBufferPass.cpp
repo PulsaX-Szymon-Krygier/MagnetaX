@@ -334,11 +334,11 @@ void VulkanGBufferPass::Record(const VulkanGBufferPassRenderInfo& renderInfo)
         vkCmdBindDescriptorSets(renderInfo.cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.GetPipelineLayout(),
             0, 1, &materialDescSet, 0, nullptr);
 
-        Matrix4f prevModel = drawItem.model;
+        Matrix4f prevModel = drawItem.rasterModel;
         if (i < renderInfo.prevModels.size()) prevModel = renderInfo.prevModels[i];
 
         GBufferPushConst pushConst{};
-        pushConst.model = drawItem.model.Transposed();
+        pushConst.model = drawItem.rasterModel.Transposed();
         pushConst.prevModel = prevModel.Transposed();
 
         vkCmdPushConstants(renderInfo.cmdBuffer, pipeline.GetPipelineLayout(), VK_SHADER_STAGE_VERTEX_BIT,

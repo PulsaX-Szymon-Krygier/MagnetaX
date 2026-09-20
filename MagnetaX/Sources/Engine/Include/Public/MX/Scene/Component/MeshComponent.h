@@ -11,4 +11,6 @@ struct MeshComponent
     explicit MeshComponent(AssetHandle<MeshAsset> _mesh) : mesh(_mesh) {}
 
     AssetHandle<MeshAsset> mesh;
+
+    bool preserveThinGeometry = false;
 };
