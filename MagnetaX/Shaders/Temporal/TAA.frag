@@ -621,10 +621,17 @@ void main()
 
     vec3 clippedHistoryYCoCg = clamp(historyYCoCg, varianceMin, varianceMax);
 
+    const float fp16RelativePrecision = 1.0 / 1024.0;
+    const float fp16MinStep = 1.0 / 16777216.0;
+
+    vec3 meanRGB = YCoCgToRGB(neighborhoodMean);
+    vec3 rgbTolerance = (abs(history.rgb) + abs(meanRGB)) * fp16RelativePrecision + vec3(2.0 * fp16MinStep);
+    float yTolerance = dot(rgbTolerance, vec3(0.25, 0.5, 0.25));
+    vec3 clippingTolerance = vec3(yTolerance, 0.5 * (rgbTolerance.r + rgbTolerance.b), yTolerance);
+
     vec3 historyDeviation = abs(historyYCoCg - neighborhoodMean);
     vec3 acceptedDeviation = abs(clippedHistoryYCoCg - neighborhoodMean);
-    vec3 historyAcceptance = min(acceptedDeviation / max(historyDeviation, vec3(0.000001)), vec3(1.0));
-    historyAcceptance = mix(vec3(1.0), historyAcceptance, greaterThan(historyDeviation, vec3(0.000001)));
+    vec3 historyAcceptance = min((acceptedDeviation + clippingTolerance) / max(historyDeviation, clippingTolerance), vec3(1.0));
     float acceptedHistory = min(historyAcceptance.x, min(historyAcceptance.y, historyAcceptance.z));
 
     historyYCoCg = clippedHistoryYCoCg;
