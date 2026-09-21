@@ -9,6 +9,8 @@ layout(location = 0) out vec4 outColor;
 layout(push_constant) uniform PushConstants
 {
     float exposureEV;
+    uint view;
+    vec2 jitterUV;
 } pc;
 
 vec3 ToneMapACES(vec3 color)
@@ -29,21 +31,21 @@ float Luminance(vec3 color)
 
 void main()
 {
-    const bool debugTAA = false;
+    vec4 source = texture(sceneColor, fragUV + pc.jitterUV);
 
-    if (debugTAA)
+    if (pc.view == 1u)
     {
-        float historyMass = max(texture(sceneColor, fragUV).a, 0.0);
+        float historyMass = max(source.a, 0.0);
         float value = clamp((historyMass - 1.0) / 31.0, 0.0, 1.0);
-        vec3 debugColor = vec3(value);
+        vec3 color = vec3(value);
 
-        outColor = vec4(debugColor, Luminance(debugColor));
+        outColor = vec4(color, Luminance(color));
         return;
     }
 
-    vec3 color = texture(sceneColor, fragUV).rgb;
+    vec3 color = source.rgb;
     color *= exp2(pc.exposureEV);
     color = ToneMapACES(color);
-    
+
     outColor = vec4(color, Luminance(color));
 }

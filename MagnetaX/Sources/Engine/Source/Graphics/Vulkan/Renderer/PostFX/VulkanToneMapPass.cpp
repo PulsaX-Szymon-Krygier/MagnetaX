@@ -14,6 +14,8 @@ namespace
     struct ToneMapPushConstants
     {
         float32 exposureEV;
+        uint32 view;
+        Vector2f jitterUV;
     };
 }
 
@@ -200,6 +202,8 @@ void VulkanToneMapPass::Record(const VulkanToneMapPassRenderInfo& renderInfo)
 
     ToneMapPushConstants pushConstants{};
     pushConstants.exposureEV = renderInfo.exposureEV;
+    pushConstants.view = (uint32)renderInfo.view;
+    pushConstants.jitterUV = renderInfo.jitterUV;
 
     vkCmdPushConstants(renderInfo.cmdBuffer, pipeline.GetPipelineLayout(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ToneMapPushConstants), &pushConstants);
 

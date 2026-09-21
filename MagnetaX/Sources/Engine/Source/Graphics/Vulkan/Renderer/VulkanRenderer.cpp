@@ -19,7 +19,14 @@ namespace
 {
     bool HasProjectionChanged(const Matrix4f& a, const Matrix4f& b)
     {
-        return a.m00 != b.m00 || a.m01 != b.m01 || a.m02 != b.m02 || a.m03 != b.m03 || a.m10 != b.m10 || a.m11 != b.m11 || a.m12 != b.m12 || a.m13 != b.m13 || a.m20 != b.m20 || a.m21 != b.m21 || a.m22 != b.m22 || a.m23 != b.m23 || a.m30 != b.m30 || a.m31 != b.m31 || a.m32 != b.m32 || a.m33 != b.m33;
+        return a.m00 != b.m00 || a.m01 != b.m01 || a.m02 != b.m02 || a.m03 != b.m03 || a.m10 != b.m10 || a.m11 != b.m11 
+            || a.m12 != b.m12 || a.m13 != b.m13 || a.m20 != b.m20 || a.m21 != b.m21 || a.m22 != b.m22 || a.m23 != b.m23 
+            || a.m30 != b.m30 || a.m31 != b.m31 || a.m32 != b.m32 || a.m33 != b.m33;
+    }
+
+    bool IsTemporalOutputView(GraphicsDebugView view)
+    {
+        return view == GraphicsDebugView::FINAL || view == GraphicsDebugView::TAA_CURRENT || view == GraphicsDebugView::TAA_HISTORY_MASS;
     }
 }
 
@@ -45,7 +52,8 @@ bool VulkanRenderer::Create(const VulkanRendererCreateInfo& createInfo)
     {
         const TAAConfig& taa = createInfo.config.aa.taa;
 
-        if (!std::isfinite(taa.feedbackMin) || !std::isfinite(taa.feedbackMax) || taa.feedbackMin < 0.0f || taa.feedbackMax > 1.0f || taa.feedbackMin > taa.feedbackMax) return false;
+        if (!std::isfinite(taa.feedbackMin) || !std::isfinite(taa.feedbackMax) || 
+            taa.feedbackMin < 0.0f || taa.feedbackMax > 1.0f || taa.feedbackMin > taa.feedbackMax) return false;
     }
 
     Destroy();
@@ -376,7 +384,7 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
 
     if (frameInfo.resetTemporalHistory) ResetTemporalHistory();
 
-    if (config.aa.mode == AAMode::TAA && debugView == GraphicsDebugView::FINAL && sceneData.viewData.valid && prevFrameValid)
+    if (config.aa.mode == AAMode::TAA && IsTemporalOutputView(debugView) && sceneData.viewData.valid && prevFrameValid)
     {
         const bool cameraChanged = sceneData.viewData.cameraId != prevCameraId;
         const bool projectionChanged = HasProjectionChanged(sceneData.viewData.proj, prevProj);
@@ -515,7 +523,8 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
 
     displayTargetLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-    if (debugView == GraphicsDebugView::FINAL)
+    //if (debugView == GraphicsDebugView::FINAL)
+    if (IsTemporalOutputView(debugView))
     {
         VkPipelineStageFlags2 sceneColorSrcStage = VK_PIPELINE_STAGE_2_NONE;
         VkAccessFlags2 sceneColorSrcAccess = VK_ACCESS_2_NONE;
@@ -586,6 +595,8 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
         sceneColorLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
         VkImageView toneMapSourceView = sceneColor.GetImageView();
+        Vector2f toneMapJitterUV{};
+        VulkanToneMapView toneMapView = VulkanToneMapView::COLOR;
 
         if (config.aa.mode == AAMode::TAA && sceneData.viewData.valid)
         {
@@ -601,6 +612,16 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
             taaInfo.previousInvViewProj = prevFrameValid ? prevInvViewProj : sceneData.viewData.invViewProj;
 
             toneMapSourceView = taa.Resolve(taaInfo);
+
+            if (debugView == GraphicsDebugView::TAA_CURRENT)
+            {
+                toneMapSourceView = sceneColor.GetImageView();
+                toneMapJitterUV = sceneData.viewData.jitter * 0.5f;
+            }
+            else if (debugView == GraphicsDebugView::TAA_HISTORY_MASS)
+            {
+                toneMapView = VulkanToneMapView::HISTORY_MASS;
+            }
         }
         else
         {
@@ -634,6 +655,8 @@ VulkanFrameResult VulkanRenderer::DrawFrame(const VulkanRendererFrameInfo& frame
         toneMapInfo.extent = extent;
         toneMapInfo.exposureEV = sceneData.viewData.exposureEV;
         toneMapInfo.srcView = toneMapSourceView;
+        toneMapInfo.jitterUV = toneMapJitterUV;
+        toneMapInfo.view = toneMapView;
 
         toneMapPass.Record(toneMapInfo);
 
@@ -834,7 +857,8 @@ Vector2f VulkanRenderer::GetProjectionJitter(VkExtent2D extent, bool temporalRes
 {
     if (config.aa.mode != AAMode::TAA) return Vector2f(0.0f);
     if (temporalReset) return Vector2f(0.0f);
-    if (debugView != GraphicsDebugView::FINAL) return Vector2f(0.0f);
+    //if (debugView != GraphicsDebugView::FINAL) return Vector2f(0.0f);
+    if (!IsTemporalOutputView(debugView)) return Vector2f(0.0f);
     if (extent.width == 0 || extent.height == 0) return Vector2f(0.0f);
 
     return taa.GetProjectionJitter();

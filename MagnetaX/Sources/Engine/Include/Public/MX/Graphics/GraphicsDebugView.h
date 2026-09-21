@@ -11,5 +11,7 @@ enum class GraphicsDebugView : uint32
     NORMAL,
     MATERIAL,
     VELOCITY,
-    DEPTH
+    DEPTH,
+    TAA_CURRENT,
+    TAA_HISTORY_MASS
 };

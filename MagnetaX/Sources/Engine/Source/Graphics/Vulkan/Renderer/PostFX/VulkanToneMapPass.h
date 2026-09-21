@@ -4,6 +4,13 @@
 
 #include "../VulkanPass.h"
 #include "../VulkanPipeline.h"
+#include <MX/Core/Math/Vector.h>
+
+enum class VulkanToneMapView : uint32
+{
+    COLOR,
+    HISTORY_MASS
+};
 
 struct VulkanToneMapPassCreateInfo : VulkanPassCreateInfo
 {
@@ -17,6 +24,8 @@ struct VulkanToneMapPassRenderInfo : VulkanPassRenderInfo
     VkImageView targetView = VK_NULL_HANDLE;
     VkExtent2D extent{};
     float32 exposureEV = 0.0f;
+    VulkanToneMapView view = VulkanToneMapView::COLOR;
+    Vector2f jitterUV{};
 };
 
 class VulkanToneMapPass
